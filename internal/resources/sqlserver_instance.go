@@ -92,25 +92,14 @@ func (SQLServerInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.C
 		return nil, err
 	}
 
-	priceFen := wrap.Price
-	origFen := wrap.OriginalPrice
-	if wrap.Response.Price > 0 || wrap.Response.OriginalPrice > 0 {
-		priceFen = wrap.Response.Price
-		origFen = wrap.Response.OriginalPrice
-	}
-	// Prefer the discounted price; fall back to the original.
-	if priceFen == 0 {
-		priceFen = origFen
-	}
-	priceYuan := float64(priceFen) / 100.0
+	priceYuan := discountedYuanFromCents(
+		wrap.Price, wrap.OriginalPrice,
+		wrap.Response.Price, wrap.Response.OriginalPrice,
+	)
 
 	chargeType := strings.ToUpper(fmt.Sprintf("%v", req.Params["InstanceChargeType"]))
-	monthly := priceYuan
-	hourly := 0.0
-	if chargeType != "PREPAID" { // POSTPAID: value is an hourly rate
-		hourly = priceYuan
-		monthly = hourly * hoursPerMonth
-	}
+	// POSTPAID: value is an hourly rate; PREPAID: value is the monthly total.
+	monthly, hourly := splitByBilling(priceYuan, chargeType != "PREPAID")
 
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("SQL Server (%vGB mem, %vGB disk)", req.Params["Memory"], req.Params["Storage"]),

@@ -33,3 +33,56 @@ func monthlyFromPrice(chargeUnit string, unitPriceDiscount, discountPrice float6
 		return discountPrice, 0
 	}
 }
+
+// discountedYuanFromCents resolves the standard cents-based (分) DescribePrice
+// response used by the mariadb / sqlserver / dcdb mappers, which all return
+// int64 Price/OriginalPrice both at the top level AND under a nested "Response"
+// wrapper. It encodes the three identical decisions those mappers previously
+// duplicated verbatim:
+//
+//  1. Dual-path: prefer the nested Response pair when it carries data (real SDK
+//     ToJsonString output), else use the top-level pair (test mocks).
+//  2. Discount fallback: prefer the discounted Price; fall back to OriginalPrice
+//     when the API returned no discount (Price == 0).
+//  3. Unit: divide 分 by 100 to get 元.
+//
+// Returns the resolved price in 元.
+func discountedYuanFromCents(topPrice, topOrig, respPrice, respOrig int64) float64 {
+	price, orig := topPrice, topOrig
+	if respPrice > 0 || respOrig > 0 {
+		price, orig = respPrice, respOrig
+	}
+	if price == 0 {
+		price = orig
+	}
+	return float64(price) / 100.0
+}
+
+// preferDiscount returns the discounted price when the API populated it
+// (discount > 0) and falls back to the undiscounted original otherwise. The
+// 元-based mappers (lighthouse / ecm / gaap) share this "prefer discount, fall
+// back to original" rule; only the surrounding struct shape differs, so each
+// caller selects its own (discount, original) pair first and then applies this.
+func preferDiscount(discount, original float64) float64 {
+	if discount > 0 {
+		return discount
+	}
+	return original
+}
+
+// splitByBilling maps a single per-unit 元 price onto cloudtab's (monthly,
+// hourly) convention for the DescribePrice-style DB APIs (mariadb / sqlserver /
+// dcdb), whose PREPAID call returns a monthly total (Period forced to 1) while
+// the POSTPAID call returns an hourly rate.
+//
+// The caller decides postpaid vs prepaid because each API names the charge-type
+// field differently (Paymode "postpaid" vs InstanceChargeType != "PREPAID"),
+// but the arithmetic afterwards is identical:
+//   - prepaid:  the price IS the monthly cost; hourly is 0.
+//   - postpaid: the price is hourly; monthly = hourly × 730.
+func splitByBilling(priceYuan float64, postpaid bool) (monthly, hourly float64) {
+	if postpaid {
+		return priceYuan * hoursPerMonth, priceYuan
+	}
+	return priceYuan, 0
+}

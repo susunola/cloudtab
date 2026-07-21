@@ -78,11 +78,8 @@ func (LighthouseInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		ip = wrap.Response.Price.InstancePrice
 	}
 
-	// Prefer the discounted price; fall back to the original.
-	monthly := ip.DiscountPrice
-	if monthly == 0 {
-		monthly = ip.OriginalPrice
-	}
+	// Prefer the discounted price; fall back to the original (already 元/month).
+	monthly := preferDiscount(ip.DiscountPrice, ip.OriginalPrice)
 
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("Lighthouse (%v)", req.Params["BundleId"]),

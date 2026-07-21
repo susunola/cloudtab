@@ -93,27 +93,14 @@ func (MariaDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 		return nil, err
 	}
 
-	priceFen := wrap.Price
-	originalFen := wrap.OriginalPrice
-	if wrap.Response.Price > 0 || wrap.Response.OriginalPrice > 0 {
-		priceFen = wrap.Response.Price
-		originalFen = wrap.Response.OriginalPrice
-	}
-	// Prefer the discounted price; fall back to the undiscounted original when
-	// the API returns no discount (mirrors the postgres/mysql mappers).
-	if priceFen == 0 {
-		priceFen = originalFen
-	}
-	priceYuan := float64(priceFen) / 100.0
+	priceYuan := discountedYuanFromCents(
+		wrap.Price, wrap.OriginalPrice,
+		wrap.Response.Price, wrap.Response.OriginalPrice,
+	)
 
 	payMode := strings.ToLower(fmt.Sprintf("%v", req.Params["Paymode"]))
-	monthly := priceYuan
-	hourly := 0.0
-	if strings.Contains(payMode, "postpaid") {
-		// POSTPAID DescribePrice returns an hourly rate.
-		hourly = priceYuan
-		monthly = priceYuan * hoursPerMonth
-	}
+	// POSTPAID DescribePrice returns an hourly rate; PREPAID returns the monthly total.
+	monthly, hourly := splitByBilling(priceYuan, strings.Contains(payMode, "postpaid"))
 
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("MariaDB (%vGB mem, %vGB disk)", req.Params["Memory"], req.Params["Storage"]),

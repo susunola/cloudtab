@@ -88,9 +88,7 @@ func (GAAPProxy) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCompo
 		orig = wrap.Response.ProxyDailyPrice
 	}
 	// Prefer the discounted daily price; fall back to the original.
-	if daily == 0 {
-		daily = orig
-	}
+	daily = preferDiscount(daily, orig)
 
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("GAAP proxy (%v Mbps)", req.Params["Bandwidth"]),
