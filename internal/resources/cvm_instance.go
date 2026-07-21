@@ -93,16 +93,13 @@ func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		return nil, err
 	}
 	ip := wrap.Price.InstancePrice
-	monthly := ip.UnitPriceDiscount * 730 // ~hours in a month; PREPAID returns fixed prices directly
-	if ip.OriginalPrice > 0 {             // PREPAID path
-		monthly = ip.DiscountPrice
-	}
+	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPriceDiscount, ip.DiscountPrice)
 	comps := []output.CostComponent{{
-		Name:         "Compute (" + req.Params["InstanceType"].(string) + ")",
-		Unit:         ip.ChargeUnit,
-		HourlyCost:   ip.UnitPriceDiscount,
-		MonthlyCost:  monthly,
-		Currency:     "CNY",
+		Name:        fmt.Sprintf("Compute (%v)", req.Params["InstanceType"]),
+		Unit:        ip.ChargeUnit,
+		HourlyCost:  hourly,
+		MonthlyCost: monthly,
+		Currency:    "CNY",
 	}}
 	if wrap.Price.BandwidthPrice.UnitPrice > 0 {
 		comps = append(comps, output.CostComponent{

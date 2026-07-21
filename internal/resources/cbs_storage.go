@@ -85,14 +85,11 @@ func (CBSStorage) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 		return nil, err
 	}
 	dp := wrap.DiskPrice
-	monthly := dp.UnitPriceDiscount * 730
-	if dp.OriginalPrice > 0 {
-		monthly = dp.DiscountPrice
-	}
+	monthly, hourly := monthlyFromPrice(dp.ChargeUnit, dp.UnitPriceDiscount, dp.DiscountPrice)
 	return []output.CostComponent{{
-		Name:        fmt.Sprintf("CBS %s (%dGB)", req.Params["DiskType"], req.Params["DiskSize"]),
+		Name:        fmt.Sprintf("CBS %v (%vGB)", req.Params["DiskType"], req.Params["DiskSize"]),
 		Unit:        dp.ChargeUnit,
-		HourlyCost:  dp.UnitPriceDiscount,
+		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    "CNY",
 	}}, nil

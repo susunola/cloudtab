@@ -93,15 +93,12 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		return nil, err
 	}
 	ip := wrap.Price.InstancePrice
-	monthly := ip.UnitPriceDiscount * 730
-	if ip.OriginalPrice > 0 {
-		monthly = ip.DiscountPrice
-	}
-	label := fmt.Sprintf("CLB (%s)", req.Params["LoadBalancerType"])
+	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPriceDiscount, ip.DiscountPrice)
+	label := fmt.Sprintf("CLB (%v)", req.Params["LoadBalancerType"])
 	comps := []output.CostComponent{{
 		Name:        label,
 		Unit:        ip.ChargeUnit,
-		HourlyCost:  ip.UnitPriceDiscount,
+		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    "CNY",
 	}}

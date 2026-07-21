@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -11,17 +10,22 @@ import (
 
 // EIP handles `tencentcloud_eip`.
 //
-// Reference: https://cloud.tencent.com/document/api/215/16699
-// (InquiryPriceCreateAddresses → Response.AddressPrice)
-//
-// Cost model:
-//   - BANDWIDTH_POSTPAID_BY_HOUR: per-hour bandwidth fee (Mbps × time)
-//   - TRAFFIC_POSTPAID_BY_HOUR:   per-GB traffic fee — requires usage.yml
-//     (monthly_gb) because the plan has no traffic volume
-//   - BANDWIDTH_PACKAGE:          fixed monthly fee via BandwidthPackage
+// Note: Tencent Cloud's VPC SDK does not expose an InquiryPrice* API for EIP.
+// Real EIP cost depends on the charge type and, for traffic-based billing, on
+// actual monthly traffic which is not present in a Terraform plan. We therefore
+// return a zero-cost placeholder line with a descriptive note and route it
+// through the StaticMapper path so it never calls the pricing engine.
 type EIP struct{}
 
 func (EIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
+	return pricing.PriceRequest{}, fmt.Errorf("EIP pricing is static; use Estimate")
+}
+
+func (EIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	return nil, fmt.Errorf("EIP pricing is static; use Estimate")
+}
+
+func (EIP) Estimate(r parser.PlannedResource) ([]output.CostComponent, error) {
 	getStr := func(k string) string {
 		if v, ok := r.After[k].(string); ok {
 			return v
@@ -44,46 +48,15 @@ func (EIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
 	}
 	bw := getInt("internet_max_bandwidth_out")
 	if bw == 0 {
-		bw = 1 // default 1Mbps if unspecified in plan
+		bw = 1
 	}
 
-	params := map[string]interface{}{
-		"InternetChargeType":     chargeType,
-		"InternetMaxBandwidthOut": bw,
-		"AddressCount":           1,
-	}
-
-	return pricing.PriceRequest{
-		Product: "vpc",
-		Action:  "InquiryPriceCreateAddresses",
-		Region:  r.Region,
-		Params:  params,
-	}, nil
-}
-
-func (EIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	var wrap struct {
-		AddressPrice struct {
-			UnitPrice         float64 `json:"UnitPrice"`
-			UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-			OriginalPrice     float64 `json:"OriginalPrice"`
-			DiscountPrice     float64 `json:"DiscountPrice"`
-			ChargeUnit        string  `json:"ChargeUnit"`
-		} `json:"AddressPrice"`
-	}
-	if err := json.Unmarshal(raw, &wrap); err != nil {
-		return nil, err
-	}
-	ap := wrap.AddressPrice
-	monthly := ap.UnitPriceDiscount * 730
-	if ap.OriginalPrice > 0 {
-		monthly = ap.DiscountPrice
-	}
+	note := "price not available via Tencent InquiryPrice API; configure usage.yml"
 	return []output.CostComponent{{
-		Name:        fmt.Sprintf("EIP (%dMbps, %s)", req.Params["InternetMaxBandwidthOut"], req.Params["InternetChargeType"]),
-		Unit:        ap.ChargeUnit,
-		HourlyCost:  ap.UnitPriceDiscount,
-		MonthlyCost: monthly,
+		Name:        fmt.Sprintf("EIP (%dMbps, %s) - %s", bw, chargeType, note),
+		Unit:        "MONTH",
+		HourlyCost:  0,
+		MonthlyCost: 0,
 		Currency:    "CNY",
 	}}, nil
 }

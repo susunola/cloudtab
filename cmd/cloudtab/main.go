@@ -11,8 +11,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
@@ -54,14 +56,14 @@ func main() {
 
 	// -- diff --
 	var (
-		before   string
-		after    string
-		diffFmt  string
-		diffReg  string
+		before  string
+		after   string
+		diffFmt string
+		diffReg string
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
-		Short: "Compare monthly cost between two plans (before → after)",
+		Short: "Compare monthly cost between two plans (before -> after)",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			engine, err := newEngine(diffReg)
 			if err != nil {
@@ -103,7 +105,10 @@ func newEngine(region string) (*pricing.Engine, error) {
 	})
 }
 
-// priceReport is the shared pipeline: parse plan → dispatch to mappers → collect cost.
+// priceReport is the shared pipeline: parse plan -> dispatch to mappers -> collect cost.
+// Mappers implementing resources.StaticMapper are evaluated locally; all others are
+// routed through the pricing engine with bounded concurrency so we stay under
+// Tencent Cloud's InquiryPrice QPS limit.
 func priceReport(engine *pricing.Engine, path string) (output.Report, error) {
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)
@@ -111,32 +116,79 @@ func priceReport(engine *pricing.Engine, path string) (output.Report, error) {
 		return rep, fmt.Errorf("parse plan: %w", err)
 	}
 	registry := resources.DefaultRegistry()
+
+	const maxConcurrency = 8
+	sem := make(chan struct{}, maxConcurrency)
+	var mu sync.Mutex
+	var g errgroup.Group
+
 	for _, r := range plan.Resources {
-		mapper, ok := registry.Lookup(r.Type)
-		if !ok {
-			rep.Skipped = append(rep.Skipped, output.SkippedResource{
-				Address: r.Address, Type: r.Type, Reason: "unsupported resource type",
-			})
-			continue
-		}
-		req, err := mapper.Extract(r)
-		if err != nil {
-			rep.Skipped = append(rep.Skipped, output.SkippedResource{
-				Address: r.Address, Type: r.Type, Reason: err.Error(),
-			})
-			continue
-		}
-		raw, err := engine.Query(req)
-		if err != nil {
-			return rep, fmt.Errorf("query %s: %w", r.Address, err)
-		}
-		comps, err := mapper.Parse(req, raw)
-		if err != nil {
-			return rep, fmt.Errorf("parse %s: %w", r.Address, err)
-		}
-		rep.Resources = append(rep.Resources, output.ResourceCost{
-			Address: r.Address, Type: r.Type, Components: comps,
+		r := r
+		g.Go(func() error {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			cost, skip, err := priceResource(engine, registry, r)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			if cost != nil {
+				rep.Resources = append(rep.Resources, *cost)
+			}
+			if skip != nil {
+				rep.Skipped = append(rep.Skipped, *skip)
+			}
+			mu.Unlock()
+			return nil
 		})
 	}
+	if err := g.Wait(); err != nil {
+		return rep, err
+	}
 	return rep, nil
+}
+
+// priceResource prices a single planned resource, returning either a cost line
+// or a skip reason. A non-nil error is a hard failure (e.g. API error) that
+// aborts the whole report.
+func priceResource(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource) (*output.ResourceCost, *output.SkippedResource, error) {
+	mapper, ok := registry.Lookup(r.Type)
+	if !ok {
+		return nil, &output.SkippedResource{
+			Address: r.Address, Type: r.Type, Reason: "unsupported resource type",
+		}, nil
+	}
+
+	// Static mappers bypass the pricing engine entirely (e.g. EIP, which has no
+	// Tencent InquiryPrice API).
+	if sm, ok := mapper.(resources.StaticMapper); ok {
+		comps, err := sm.Estimate(r)
+		if err != nil {
+			return nil, &output.SkippedResource{
+				Address: r.Address, Type: r.Type, Reason: err.Error(),
+			}, nil
+		}
+		return &output.ResourceCost{
+			Address: r.Address, Type: r.Type, Components: comps,
+		}, nil, nil
+	}
+
+	req, err := mapper.Extract(r)
+	if err != nil {
+		return nil, &output.SkippedResource{
+			Address: r.Address, Type: r.Type, Reason: err.Error(),
+		}, nil
+	}
+	raw, err := engine.Query(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query %s: %w", r.Address, err)
+	}
+	comps, err := mapper.Parse(req, raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse %s: %w", r.Address, err)
+	}
+	return &output.ResourceCost{
+		Address: r.Address, Type: r.Type, Components: comps,
+	}, nil, nil
 }

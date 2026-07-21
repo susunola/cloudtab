@@ -1,7 +1,7 @@
 // Package resources maps Terraform resource types to per-product Mappers.
 //
 // Adding support for a new resource type = writing one file that implements
-// Mapper.Extract (plan → PriceRequest) and Mapper.Parse (raw API response →
+// Mapper.Extract (plan -> PriceRequest) and Mapper.Parse (raw API response ->
 // CostComponents).
 package resources
 
@@ -15,6 +15,14 @@ import (
 type Mapper interface {
 	Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 	Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error)
+}
+
+// StaticMapper is an optional extension for resources whose price cannot be
+// fetched from a Tencent InquiryPrice* API. When a Mapper implements this
+// interface, priceReport uses Estimate directly and skips the pricing engine.
+type StaticMapper interface {
+	Mapper
+	Estimate(r parser.PlannedResource) ([]output.CostComponent, error)
 }
 
 type Registry struct {

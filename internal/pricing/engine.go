@@ -12,14 +12,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
+	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
+	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
-	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
-	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
-	vpc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/vpc/v20170312"
 )
 
 type Config struct {
@@ -31,7 +31,7 @@ type Config struct {
 
 // PriceRequest is the neutral request submitted by a Mapper.
 //
-//	Product: "cvm" | "cbs" | "vpc" | "clb" | "cdb" | "redis" | ...
+//	Product: "cvm" | "cbs" | "clb" | "cdb" | "redis" | ...
 //	Action:  "InquiryPriceRunInstances" | "InquiryPriceCreateDisks" | ...
 //	Region:  ap-guangzhou / ap-shanghai / ...
 //	Params:  action-specific input, will be JSON-marshaled into the SDK request
@@ -49,15 +49,17 @@ func (r PriceRequest) CacheKey() string {
 }
 
 type Engine struct {
-	cfg   Config
-	cache *cache // optional BoltDB
+	cfg     Config
+	cache   *cache // optional BoltDB
+	mu      sync.Mutex
+	clients map[string]interface{} // product:region -> typed SDK client
 }
 
 func NewEngine(cfg Config) (*Engine, error) {
 	if cfg.SecretID == "" || cfg.SecretKey == "" {
 		return nil, errors.New("missing TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
 	}
-	e := &Engine{cfg: cfg}
+	e := &Engine{cfg: cfg, clients: map[string]interface{}{}}
 	if cfg.CachePath != "" {
 		c, err := openCache(cfg.CachePath)
 		if err != nil {
@@ -87,9 +89,6 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	if region == "" {
 		region = e.cfg.Region
 	}
-	credential := tcCommon.NewCredential(e.cfg.SecretID, e.cfg.SecretKey)
-	prof := tcProfile.NewClientProfile()
-	prof.HttpProfile.Endpoint = req.Product + ".tencentcloudapi.com"
 
 	var (
 		resp []byte
@@ -97,13 +96,11 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	)
 	switch req.Product {
 	case "cvm":
-		resp, err = e.queryCVM(credential, prof, region, req)
+		resp, err = e.queryCVM(region, req)
 	case "cbs":
-		resp, err = e.queryCBS(credential, prof, region, req)
-	case "vpc":
-		resp, err = e.queryVPC(credential, prof, region, req)
+		resp, err = e.queryCBS(region, req)
 	case "clb":
-		resp, err = e.queryCLB(credential, prof, region, req)
+		resp, err = e.queryCLB(region, req)
 	default:
 		return nil, fmt.Errorf("unsupported product %q (add a handler in engine.go)", req.Product)
 	}
@@ -116,13 +113,50 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	return resp, nil
 }
 
-// ----- per-product dispatch -----
+// clientFn builds a typed SDK client from a credential/profile pair.
+type clientFn func(*tcCommon.Credential, *tcProfile.ClientProfile) (interface{}, error)
 
-func (e *Engine) queryCVM(credential *tcCommon.Credential, prof *tcProfile.ClientProfile, region string, req PriceRequest) ([]byte, error) {
-	client, err := cvm.NewClient(credential, region, prof)
+// client returns a cached SDK client for the given product/region, creating it
+// on first use. Tencent SDK clients are safe for concurrent use, so a single
+// instance is shared across goroutines.
+func (e *Engine) client(product, region string, newFn clientFn) (interface{}, error) {
+	key := product + ":" + region
+	e.mu.Lock()
+	if c, ok := e.clients[key]; ok {
+		e.mu.Unlock()
+		return c, nil
+	}
+	e.mu.Unlock()
+
+	credential := tcCommon.NewCredential(e.cfg.SecretID, e.cfg.SecretKey)
+	prof := tcProfile.NewClientProfile()
+	prof.HttpProfile.Endpoint = product + ".tencentcloudapi.com"
+
+	c, err := newFn(credential, prof)
 	if err != nil {
 		return nil, err
 	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if existing, ok := e.clients[key]; ok {
+		return existing, nil // lost the race; reuse the winner
+	}
+	e.clients[key] = c
+	return c, nil
+}
+
+// ----- per-product dispatch -----
+
+func (e *Engine) queryCVM(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("cvm", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return cvm.NewClient(cred, region, prof)
+	})
+	if err != nil {
+		return nil, err
+	}
+	client := raw.(*cvm.Client)
+
 	switch req.Action {
 	case "InquiryPriceRunInstances":
 		in := cvm.NewInquiryPriceRunInstancesRequest()
@@ -136,11 +170,15 @@ func (e *Engine) queryCVM(credential *tcCommon.Credential, prof *tcProfile.Clien
 	}
 }
 
-func (e *Engine) queryCBS(credential *tcCommon.Credential, prof *tcProfile.ClientProfile, region string, req PriceRequest) ([]byte, error) {
-	client, err := cbs.NewClient(credential, region, prof)
+func (e *Engine) queryCBS(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("cbs", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return cbs.NewClient(cred, region, prof)
+	})
 	if err != nil {
 		return nil, err
 	}
+	client := raw.(*cbs.Client)
+
 	switch req.Action {
 	case "InquiryPriceCreateDisks":
 		in := cbs.NewInquiryPriceCreateDisksRequest()
@@ -154,29 +192,15 @@ func (e *Engine) queryCBS(credential *tcCommon.Credential, prof *tcProfile.Clien
 	}
 }
 
-func (e *Engine) queryVPC(credential *tcCommon.Credential, prof *tcProfile.ClientProfile, region string, req PriceRequest) ([]byte, error) {
-	client, err := vpc.NewClient(credential, region, prof)
+func (e *Engine) queryCLB(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("clb", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return clb.NewClient(cred, region, prof)
+	})
 	if err != nil {
 		return nil, err
 	}
-	switch req.Action {
-	case "InquiryPriceCreateAddresses":
-		in := vpc.NewInquiryPriceCreateAddressesRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceCreateAddresses(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported vpc action %q", req.Action)
-	}
-}
+	client := raw.(*clb.Client)
 
-func (e *Engine) queryCLB(credential *tcCommon.Credential, prof *tcProfile.ClientProfile, region string, req PriceRequest) ([]byte, error) {
-	client, err := clb.NewClient(credential, region, prof)
-	if err != nil {
-		return nil, err
-	}
 	switch req.Action {
 	case "InquiryPriceCreateLoadBalancer":
 		in := clb.NewInquiryPriceCreateLoadBalancerRequest()
