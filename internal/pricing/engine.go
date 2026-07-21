@@ -14,15 +14,9 @@ import (
 	"fmt"
 	"sync"
 
-	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
-	cdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb/v20170320"
-	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
-	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
-	postgres "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres/v20170312"
-	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
 )
 
 type Config struct {
@@ -105,26 +99,11 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		region = e.cfg.Region
 	}
 
-	var (
-		resp []byte
-		err  error
-	)
-	switch req.Product {
-	case "cvm":
-		resp, err = e.queryCVM(region, req)
-	case "cbs":
-		resp, err = e.queryCBS(region, req)
-	case "clb":
-		resp, err = e.queryCLB(region, req)
-	case "cdb":
-		resp, err = e.queryCDB(region, req)
-	case "postgres":
-		resp, err = e.queryPostgres(region, req)
-	case "redis":
-		resp, err = e.queryRedis(region, req)
-	default:
-		return nil, fmt.Errorf("unsupported product %q (add a handler in engine.go)", req.Product)
+	h, ok := handlers[req.Product]
+	if !ok {
+		return nil, fmt.Errorf("unsupported product %q (register a productHandler in handlers.go)", req.Product)
 	}
+	resp, err := e.invoke(h, region, req)
 	if err != nil {
 		return nil, err
 	}
@@ -172,138 +151,21 @@ func (e *Engine) client(product, region string, newFn clientFn) (interface{}, er
 	return c, nil
 }
 
-// ----- per-product dispatch -----
-
-func (e *Engine) queryCVM(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("cvm", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return cvm.NewClient(cred, region, prof)
+// invoke resolves the cached SDK client for a product handler, looks up the
+// action, and executes it. This is the single generic dispatch path shared by
+// every product; per-product knowledge lives entirely in handlers.go.
+func (e *Engine) invoke(h productHandler, region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client(h.product, region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return h.newClient(cred, region, prof)
 	})
 	if err != nil {
 		return nil, err
 	}
-	client := raw.(*cvm.Client)
-
-	switch req.Action {
-	case "InquiryPriceRunInstances":
-		in := cvm.NewInquiryPriceRunInstancesRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceRunInstances(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported cvm action %q", req.Action)
+	action, ok := h.actions[req.Action]
+	if !ok {
+		return nil, fmt.Errorf("unsupported %s action %q", h.product, req.Action)
 	}
-}
-
-func (e *Engine) queryCBS(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("cbs", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return cbs.NewClient(cred, region, prof)
-	})
-	if err != nil {
-		return nil, err
-	}
-	client := raw.(*cbs.Client)
-
-	switch req.Action {
-	case "InquiryPriceCreateDisks":
-		in := cbs.NewInquiryPriceCreateDisksRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceCreateDisks(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported cbs action %q", req.Action)
-	}
-}
-
-func (e *Engine) queryCLB(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("clb", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return clb.NewClient(cred, region, prof)
-	})
-	if err != nil {
-		return nil, err
-	}
-	client := raw.(*clb.Client)
-
-	switch req.Action {
-	case "InquiryPriceCreateLoadBalancer":
-		in := clb.NewInquiryPriceCreateLoadBalancerRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceCreateLoadBalancer(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported clb action %q", req.Action)
-	}
-}
-
-func (e *Engine) queryCDB(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("cdb", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return cdb.NewClient(cred, region, prof)
-	})
-	if err != nil {
-		return nil, err
-	}
-	client := raw.(*cdb.Client)
-
-	switch req.Action {
-	case "DescribeDBPrice":
-		in := cdb.NewDescribeDBPriceRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.DescribeDBPrice(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported cdb action %q", req.Action)
-	}
-}
-
-func (e *Engine) queryRedis(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("redis", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return redis.NewClient(cred, region, prof)
-	})
-	if err != nil {
-		return nil, err
-	}
-	client := raw.(*redis.Client)
-
-	switch req.Action {
-	case "InquiryPriceCreateInstance":
-		in := redis.NewInquiryPriceCreateInstanceRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceCreateInstance(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported redis action %q", req.Action)
-	}
-}
-
-func (e *Engine) queryPostgres(region string, req PriceRequest) ([]byte, error) {
-	raw, err := e.client("postgres", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
-		return postgres.NewClient(cred, region, prof)
-	})
-	if err != nil {
-		return nil, err
-	}
-	client := raw.(*postgres.Client)
-
-	switch req.Action {
-	case "InquiryPriceCreateDBInstances":
-		in := postgres.NewInquiryPriceCreateDBInstancesRequest()
-		if err := bindParams(req.Params, in); err != nil {
-			return nil, err
-		}
-		out, err := client.InquiryPriceCreateDBInstances(in)
-		return sdkResult(out, err)
-	default:
-		return nil, fmt.Errorf("unsupported postgres action %q", req.Action)
-	}
+	return action(raw, req.Params)
 }
 
 // ----- helpers -----
