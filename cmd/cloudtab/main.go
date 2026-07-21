@@ -30,8 +30,9 @@ var Version = "(dev)"
 
 func main() {
 	root := &cobra.Command{
-		Use:   "cloudtab",
-		Short: "Tencent Cloud cost estimation from Terraform plans",
+		Use:     "cloudtab",
+		Short:   "Tencent Cloud cost estimation from Terraform plans",
+		Version: Version,
 	}
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

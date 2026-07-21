@@ -1,10 +1,17 @@
 package resources
 
+import (
+	"strconv"
+)
+
 // attrHelpers provide safe, consistent reads from Terraform attribute maps.
 // All mappers receive attributes as map[string]interface{} from the JSON plan,
 // where numeric values are decoded as float64 by encoding/json.
 
 func getStr(m map[string]interface{}, k string) string {
+	if m == nil {
+		return ""
+	}
 	if v, ok := m[k].(string); ok {
 		return v
 	}
@@ -12,6 +19,9 @@ func getStr(m map[string]interface{}, k string) string {
 }
 
 func getInt(m map[string]interface{}, k string) int64 {
+	if m == nil {
+		return 0
+	}
 	switch v := m[k].(type) {
 	case float64:
 		return int64(v)
@@ -19,13 +29,28 @@ func getInt(m map[string]interface{}, k string) int64 {
 		return int64(v)
 	case int64:
 		return v
+	case string:
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return parsed
+		}
+		if parsedFloat, err := strconv.ParseFloat(v, 64); err == nil {
+			return int64(parsedFloat)
+		}
 	}
 	return 0
 }
 
 func getBool(m map[string]interface{}, k string) bool {
-	if v, ok := m[k].(bool); ok {
+	if m == nil {
+		return false
+	}
+	switch v := m[k].(type) {
+	case bool:
 		return v
+	case string:
+		if parsed, err := strconv.ParseBool(v); err == nil {
+			return parsed
+		}
 	}
 	return false
 }
