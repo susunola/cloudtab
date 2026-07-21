@@ -52,6 +52,7 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_eip", &EIP{})
 		r.Register("tencentcloud_clb_instance", &CLBInstance{})
 		r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
+		r.Register("tencentcloud_postgresql_instance", &PostgreSQLInstance{})
 		r.Register("tencentcloud_redis_instance", &RedisInstance{})
 		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
 		defaultRegistryInstance = r

@@ -114,6 +114,41 @@ func TestCLBExtractAndParse(t *testing.T) {
 
 // ----- MySQL integration test -----
 
+func TestPostgreSQLExtractAndParseFullPipeline(t *testing.T) {
+	m := PostgreSQLInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_postgresql_instance.pg",
+		Type:    "tencentcloud_postgresql_instance",
+		Region:  "ap-beijing",
+		After: map[string]interface{}{
+			"availability_zone":    "ap-beijing-3",
+			"spec_code":            "cdb.pg.z1.2g",
+			"storage":              100,
+			"instance_charge_type": "PREPAID",
+			"prepaid_period":       1,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Postgres Extract: %v", err)
+	}
+
+	// InquiryPriceCreateDBInstances response.
+	raw := []byte(`{"Response":{"Price":15000,"Currency":"CNY"}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Postgres Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 150.0 {
+		t.Errorf("monthly = %v, want 150.0", comps[0].MonthlyCost)
+	}
+}
+
+// ----- MySQL integration test -----
+
 func TestMySQLExtractAndParseFullPipeline(t *testing.T) {
 	m := MySQLInstance{}
 	r := parser.PlannedResource{
@@ -340,6 +375,16 @@ func TestAllMappersImplementContract(t *testing.T) {
 				"charge_type":        "POSTPAID",
 				"redis_shard_num":    1,
 				"redis_replicas_num": 1,
+			},
+		},
+		{
+			addr: "tencentcloud_postgresql_instance.pg",
+			typ:  "tencentcloud_postgresql_instance",
+			after: map[string]interface{}{
+				"availability_zone":    "ap-guangzhou-3",
+				"spec_code":            "cdb.pg.z1.2g",
+				"storage":              150,
+				"instance_charge_type": "POSTPAID_BY_HOUR",
 			},
 		},
 	}

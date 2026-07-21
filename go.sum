@@ -27,6 +27,8 @@ github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1000 h1:mem
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1000/go.mod h1:r5r4xbfxSaeR04b166HGsBa/R4U3SueirEUpXGuw+Q0=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.1000 h1:cfY4iZD9mqBpwk26v/m9sxwIiNHUAliVPNTTpMGiyYY=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.1000/go.mod h1:xBlIGtLzIbT8a6/GIQj5i9r8EyLUzONN2w9+mFlNNGc=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres v1.0.1000 h1:oknD9cizcYcCk06RmvjV9vNXwEPtNjKHCJDJJ/1NB/c=
+github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres v1.0.1000/go.mod h1:/PRCHnQi6KfAqVxwUJ2vxbJdKVK7i3XojyWoQ6n4O5w=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis v1.0.1000 h1:SW34jig642KdQ4GWsJyvKsaUcqu+dqM1InnO1AfP9Hc=
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis v1.0.1000/go.mod h1:rUxU64mJMsCJo1ifrPyphnkeKVT9jNEQ/nJ5Mst3OkQ=
 go.etcd.io/bbolt v1.5.0 h1:S7GAl7Fxv12yohbwFfIbQCGDWbQbtDGPET4P/bD4lxU=

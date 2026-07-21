@@ -21,6 +21,7 @@ import (
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
+	postgres "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres/v20170312"
 	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
 )
 
@@ -117,6 +118,8 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		resp, err = e.queryCLB(region, req)
 	case "cdb":
 		resp, err = e.queryCDB(region, req)
+	case "postgres":
+		resp, err = e.queryPostgres(region, req)
 	case "redis":
 		resp, err = e.queryRedis(region, req)
 	default:
@@ -278,6 +281,28 @@ func (e *Engine) queryRedis(region string, req PriceRequest) ([]byte, error) {
 		return sdkResult(out, err)
 	default:
 		return nil, fmt.Errorf("unsupported redis action %q", req.Action)
+	}
+}
+
+func (e *Engine) queryPostgres(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("postgres", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return postgres.NewClient(cred, region, prof)
+	})
+	if err != nil {
+		return nil, err
+	}
+	client := raw.(*postgres.Client)
+
+	switch req.Action {
+	case "InquiryPriceCreateDBInstances":
+		in := postgres.NewInquiryPriceCreateDBInstancesRequest()
+		if err := bindParams(req.Params, in); err != nil {
+			return nil, err
+		}
+		out, err := client.InquiryPriceCreateDBInstances(in)
+		return sdkResult(out, err)
+	default:
+		return nil, fmt.Errorf("unsupported postgres action %q", req.Action)
 	}
 }
 

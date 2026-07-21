@@ -75,6 +75,7 @@ Sample output:
 | EIP | `tencentcloud_eip` | No official InquiryPrice API (static placeholder + note) |
 | CLB | `tencentcloud_clb_instance` | `clb:InquiryPriceCreateLoadBalancer` |
 | MySQL | `tencentcloud_mysql_instance` | `cdb:DescribeDBPrice` |
+| PostgreSQL | `tencentcloud_postgresql_instance` | `postgres:InquiryPriceCreateDBInstances` |
 | Redis | `tencentcloud_redis_instance` | `redis:InquiryPriceCreateInstance` |
 
 **Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
