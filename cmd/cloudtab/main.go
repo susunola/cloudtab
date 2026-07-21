@@ -30,9 +30,10 @@ func main() {
 
 	// -- breakdown --
 	var (
-		path   string
-		region string
-		format string
+		path      string
+		region    string
+		format    string
+		usageFile string
 	)
 	breakdown := &cobra.Command{
 		Use:   "breakdown",
@@ -43,7 +44,12 @@ func main() {
 				return err
 			}
 			defer engine.Close()
-			rep, err := priceReport(engine, path)
+
+			usage, err := parser.LoadUsageYAML(usageFile)
+			if err != nil {
+				return fmt.Errorf("load usage file: %w", err)
+			}
+			rep, err := priceReport(engine, path, usage)
 			if err != nil {
 				return err
 			}
@@ -52,14 +58,17 @@ func main() {
 	}
 	breakdown.Flags().StringVar(&path, "path", "plan.json", "Path to terraform plan.json")
 	breakdown.Flags().StringVar(&region, "region", "ap-guangzhou", "Default region for pricing lookup")
+	breakdown.Flags().StringVar(&usageFile, "usage-file", "", "Path to usage.yml assumptions (optional)")
 	breakdown.Flags().StringVar(&format, "format", "table", "Output format: table|json")
 
 	// -- diff --
 	var (
-		before  string
-		after   string
-		diffFmt string
-		diffReg string
+		before          string
+		after           string
+		diffFmt         string
+		diffReg         string
+		beforeUsageFile string
+		afterUsageFile  string
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
@@ -70,11 +79,21 @@ func main() {
 				return err
 			}
 			defer engine.Close()
-			b, err := priceReport(engine, before)
+
+			beforeUsage, err := parser.LoadUsageYAML(beforeUsageFile)
+			if err != nil {
+				return fmt.Errorf("load before usage file: %w", err)
+			}
+			afterUsage, err := parser.LoadUsageYAML(afterUsageFile)
+			if err != nil {
+				return fmt.Errorf("load after usage file: %w", err)
+			}
+
+			b, err := priceReport(engine, before, beforeUsage)
 			if err != nil {
 				return fmt.Errorf("before: %w", err)
 			}
-			a, err := priceReport(engine, after)
+			a, err := priceReport(engine, after, afterUsage)
 			if err != nil {
 				return fmt.Errorf("after: %w", err)
 			}
@@ -84,6 +103,8 @@ func main() {
 	diff.Flags().StringVar(&before, "before", "", "Path to baseline plan.json (required)")
 	diff.Flags().StringVar(&after, "after", "", "Path to new plan.json (required)")
 	diff.Flags().StringVar(&diffReg, "region", "ap-guangzhou", "Default region for pricing lookup")
+	diff.Flags().StringVar(&beforeUsageFile, "before-usage-file", "", "Path to usage.yml for --before plan (optional)")
+	diff.Flags().StringVar(&afterUsageFile, "after-usage-file", "", "Path to usage.yml for --after plan (optional)")
 	diff.Flags().StringVar(&diffFmt, "format", "table", "Output format: table|json|markdown")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
@@ -109,7 +130,7 @@ func newEngine(region string) (*pricing.Engine, error) {
 // Mappers implementing resources.StaticMapper are evaluated locally; all others are
 // routed through the pricing engine with bounded concurrency so we stay under
 // Tencent Cloud's InquiryPrice QPS limit.
-func priceReport(engine *pricing.Engine, path string) (output.Report, error) {
+func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides) (output.Report, error) {
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)
 	if err != nil {
@@ -124,6 +145,9 @@ func priceReport(engine *pricing.Engine, path string) (output.Report, error) {
 
 	for _, r := range plan.Resources {
 		r := r
+		if u, ok := usage[r.Address]; ok {
+			r = mergeUsageIntoAfter(r, u)
+		}
 		g.Go(func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -191,4 +215,19 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 	return &output.ResourceCost{
 		Address: r.Address, Type: r.Type, Components: comps,
 	}, nil, nil
+}
+
+func mergeUsageIntoAfter(r parser.PlannedResource, usage map[string]interface{}) parser.PlannedResource {
+	if len(usage) == 0 {
+		return r
+	}
+	merged := make(map[string]interface{}, len(r.After)+len(usage))
+	for k, v := range r.After {
+		merged[k] = v
+	}
+	for k, v := range usage {
+		merged[k] = v // usage wins on key conflict
+	}
+	r.After = merged
+	return r
 }

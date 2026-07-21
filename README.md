@@ -72,10 +72,12 @@ Sample output:
 |---|---|---|
 | CVM | `tencentcloud_instance` | `cvm:InquiryPriceRunInstances` |
 | CBS | `tencentcloud_cbs_storage` | `cbs:InquiryPriceCreateDisks` |
-| EIP | `tencentcloud_eip` | `vpc:InquiryPriceCreateAddresses` |
+| EIP | `tencentcloud_eip` | No official InquiryPrice API (static placeholder + note) |
 | CLB | `tencentcloud_clb_instance` | `clb:InquiryPriceCreateLoadBalancer` |
+| MySQL | `tencentcloud_mysql_instance` | `cdb:DescribeDBPrice` |
+| Redis | `tencentcloud_redis_instance` | `redis:InquiryPriceCreateInstance` |
 
-**Coming next**: TencentDB MySQL/Redis, COS, CDN, CFS, SCF. See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
+**Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## GitHub Action
 
@@ -119,7 +121,7 @@ Tencent Cloud (current):
 - [x] **M2** — CBS, EIP, CLB
 - [x] **M3** — `diff` command + markdown output
 - [x] **M4** — GitHub Action + sticky PR comment
-- [ ] **M5** — TencentDB MySQL/Redis, `usage.yml` for traffic/requests
+- [x] **M5** — TencentDB MySQL/Redis, `usage.yml` override wiring (`--usage-file`, `--before-usage-file`, `--after-usage-file`)
 - [ ] **M6** — Static price table for COS/CDN/SCF (no InquiryPrice API)
 
 Multi-cloud (next):

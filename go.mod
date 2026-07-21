@@ -6,11 +6,14 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/spf13/cobra v1.10.2
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis v1.0.1000
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/sync v0.20.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

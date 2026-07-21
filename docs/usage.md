@@ -59,8 +59,9 @@ go build -o cloudtab ./cmd/cloudtab
       "action": [
         "cvm:InquiryPriceRunInstances",
         "cbs:InquiryPriceCreateDisks",
-        "vpc:InquiryPriceCreateAddresses",
-        "clb:InquiryPriceCreateLoadBalancer"
+        "clb:InquiryPriceCreateLoadBalancer",
+        "cdb:DescribeDBPrice",
+        "redis:InquiryPriceCreateInstance"
       ],
       "resource": "*"
     }
@@ -127,11 +128,24 @@ Skipped resources:
 |---|---|---|
 | `--path` | `plan.json` | terraform show 输出路径 |
 | `--region` | `ap-guangzhou` | 默认地域；plan 里显式指定的 region 优先 |
+| `--usage-file` | 空 | usage 假设 YAML（按资源 address 覆盖参数，如 `mem_size`、`monthly_*`） |
 | `--format` | `table` | `table` / `json` |
 
 **JSON 输出（供脚本消费）：**
 ```bash
 cloudtab breakdown --path plan.json --format json | jq '.resources[].components[].monthly_cost'
+```
+
+**带 usage.yml 覆盖（M5）：**
+```yaml
+# usage.yml
+# address 必须和 plan.json 中的 resource_changes.address 一致
+tencentcloud_redis_instance.cache:
+  mem_size: 4096
+```
+
+```bash
+cloudtab breakdown --path plan.json --usage-file usage.yml
 ```
 
 ---
@@ -184,6 +198,8 @@ cloudtab diff --before plan.old.json --after plan.new.json --format markdown
 | `--before` | 必填 | 基线 plan.json |
 | `--after` | 必填 | 新 plan.json |
 | `--region` | `ap-guangzhou` | 默认地域 |
+| `--before-usage-file` | 空 | 基线 plan 的 usage 覆盖 YAML |
+| `--after-usage-file` | 空 | 新 plan 的 usage 覆盖 YAML |
 | `--format` | `table` | `table` / `json` / `markdown` |
 
 ---
@@ -276,7 +292,7 @@ A: Action 里已经 `terraform_wrapper: false`。如果本地跑 `terraform show
 A: 支持。`plan.json` 里每个实例都是独立的 `resource_changes` 项，`address` 长这样：`tencentcloud_instance.api[0]`, `tencentcloud_instance.api[1]`。
 
 **Q: 支持流量类费用（EIP TRAFFIC / CDN / COS）吗？**  
-A: 目前 M4 前**只算带宽/时长这类可从 plan 推出的字段**。流量、请求数、存储量这类 usage-driven 费用需要 `usage.yml`（M5 计划）——你在 YAML 里写 `monthly_gb: 500`，cloudtab 才知道流量。
+A: 目前核心覆盖的是可直接询价的资源（CVM/CBS/CLB/MySQL/Redis）。对于 usage-driven 场景，已支持通过 `usage.yml` 覆盖资源参数（`--usage-file` / `--before-usage-file` / `--after-usage-file`）来注入假设；COS/CDN/SCF 的静态价格表仍在后续里程碑。
 
 ---
 

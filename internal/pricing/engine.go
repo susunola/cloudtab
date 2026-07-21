@@ -15,11 +15,13 @@ import (
 	"sync"
 
 	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
+	cdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb/v20170320"
 	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
+	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
 )
 
 type Config struct {
@@ -32,7 +34,8 @@ type Config struct {
 // PriceRequest is the neutral request submitted by a Mapper.
 //
 //	Product: "cvm" | "cbs" | "clb" | "cdb" | "redis" | ...
-//	Action:  "InquiryPriceRunInstances" | "InquiryPriceCreateDisks" | ...
+//	Action:  "InquiryPriceRunInstances" | "InquiryPriceCreateDisks" |
+//	         "DescribeDBPrice" | "InquiryPriceCreateInstance" | ...
 //	Region:  ap-guangzhou / ap-shanghai / ...
 //	Params:  action-specific input, will be JSON-marshaled into the SDK request
 type PriceRequest struct {
@@ -101,6 +104,10 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		resp, err = e.queryCBS(region, req)
 	case "clb":
 		resp, err = e.queryCLB(region, req)
+	case "cdb":
+		resp, err = e.queryCDB(region, req)
+	case "redis":
+		resp, err = e.queryRedis(region, req)
 	default:
 		return nil, fmt.Errorf("unsupported product %q (add a handler in engine.go)", req.Product)
 	}
@@ -211,6 +218,50 @@ func (e *Engine) queryCLB(region string, req PriceRequest) ([]byte, error) {
 		return sdkResult(out, err)
 	default:
 		return nil, fmt.Errorf("unsupported clb action %q", req.Action)
+	}
+}
+
+func (e *Engine) queryCDB(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("cdb", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return cdb.NewClient(cred, region, prof)
+	})
+	if err != nil {
+		return nil, err
+	}
+	client := raw.(*cdb.Client)
+
+	switch req.Action {
+	case "DescribeDBPrice":
+		in := cdb.NewDescribeDBPriceRequest()
+		if err := bindParams(req.Params, in); err != nil {
+			return nil, err
+		}
+		out, err := client.DescribeDBPrice(in)
+		return sdkResult(out, err)
+	default:
+		return nil, fmt.Errorf("unsupported cdb action %q", req.Action)
+	}
+}
+
+func (e *Engine) queryRedis(region string, req PriceRequest) ([]byte, error) {
+	raw, err := e.client("redis", region, func(cred *tcCommon.Credential, prof *tcProfile.ClientProfile) (interface{}, error) {
+		return redis.NewClient(cred, region, prof)
+	})
+	if err != nil {
+		return nil, err
+	}
+	client := raw.(*redis.Client)
+
+	switch req.Action {
+	case "InquiryPriceCreateInstance":
+		in := redis.NewInquiryPriceCreateInstanceRequest()
+		if err := bindParams(req.Params, in); err != nil {
+			return nil, err
+		}
+		out, err := client.InquiryPriceCreateInstance(in)
+		return sdkResult(out, err)
+	default:
+		return nil, fmt.Errorf("unsupported redis action %q", req.Action)
 	}
 }
 

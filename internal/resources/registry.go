@@ -42,7 +42,8 @@ func DefaultRegistry() *Registry {
 	r.Register("tencentcloud_cbs_storage", &CBSStorage{})
 	r.Register("tencentcloud_eip", &EIP{})
 	r.Register("tencentcloud_clb_instance", &CLBInstance{})
-	// TODO: tencentcloud_mysql_instance, tencentcloud_redis_instance,
-	// tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
+	r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
+	r.Register("tencentcloud_redis_instance", &RedisInstance{})
+	// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
 	return r
 }
