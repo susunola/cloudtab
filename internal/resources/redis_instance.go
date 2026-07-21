@@ -25,30 +25,12 @@ import (
 type RedisInstance struct{}
 
 func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return strings.TrimSpace(v)
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		case int64:
-			return v
-		}
-		return 0
-	}
-
-	zoneName := getStr("availability_zone")
+	zoneName := strings.TrimSpace(getStr(r.After, "availability_zone"))
 	if zoneName == "" {
-		zoneName = getStr("zone")
+		zoneName = getStr(r.After, "zone")
 	}
-	memSize := getInt("mem_size")
-	typeID := getInt("type_id")
+	memSize := getInt(r.After, "mem_size")
+	typeID := getInt(r.After, "type_id")
 	if typeID == 0 {
 		typeID = 6 // default to Redis 4.0 standard for missing plan details
 	}
@@ -56,19 +38,19 @@ func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_redis_instance requires availability_zone/type_id/mem_size")
 	}
 
-	goodsNum := getInt("count")
+	goodsNum := getInt(r.After, "count")
 	if goodsNum <= 0 {
 		goodsNum = 1
 	}
-	period := getInt("prepaid_period")
+	period := getInt(r.After, "prepaid_period")
 	if period <= 0 {
-		period = getInt("period")
+		period = getInt(r.After, "period")
 	}
 	if period <= 0 {
 		period = 1
 	}
 
-	chargeType := strings.ToUpper(getStr("charge_type"))
+	chargeType := strings.ToUpper(getStr(r.After, "charge_type"))
 	billingMode := int64(0)
 	if chargeType == "PREPAID" || chargeType == "PRE_PAID" {
 		billingMode = 1
@@ -82,16 +64,16 @@ func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 		"BillingMode": billingMode,
 		"ZoneName":    zoneName,
 	}
-	if shards := getInt("redis_shard_num"); shards > 0 {
+	if shards := getInt(r.After, "redis_shard_num"); shards > 0 {
 		params["RedisShardNum"] = shards
 	}
-	if replicas := getInt("redis_replicas_num"); replicas > 0 {
+	if replicas := getInt(r.After, "redis_replicas_num"); replicas > 0 {
 		params["RedisReplicasNum"] = replicas
 	}
-	if pv := getStr("product_version"); pv != "" {
+	if pv := getStr(r.After, "product_version"); pv != "" {
 		params["ProductVersion"] = pv
 	}
-	if v, ok := r.After["replicas_readonly"].(bool); ok {
+	if v := getBool(r.After, "replicas_readonly"); v {
 		params["ReplicasReadonly"] = v
 	}
 

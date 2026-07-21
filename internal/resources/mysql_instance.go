@@ -26,55 +26,37 @@ import (
 type MySQLInstance struct{}
 
 func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return strings.TrimSpace(v)
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		case int64:
-			return v
-		}
-		return 0
-	}
-
-	zone := getStr("availability_zone")
+	zone := strings.TrimSpace(getStr(r.After, "availability_zone"))
 	if zone == "" {
-		zone = getStr("zone")
+		zone = getStr(r.After, "zone")
 	}
-	memory := getInt("mem_size")
+	memory := getInt(r.After, "mem_size")
 	if memory == 0 {
-		memory = getInt("memory")
+		memory = getInt(r.After, "memory")
 	}
-	volume := getInt("volume_size")
+	volume := getInt(r.After, "volume_size")
 	if volume == 0 {
-		volume = getInt("volume")
+		volume = getInt(r.After, "volume")
 	}
 	if zone == "" || memory == 0 || volume == 0 {
 		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_mysql_instance requires availability_zone/mem_size/volume_size")
 	}
 
-	goodsNum := getInt("count")
+	goodsNum := getInt(r.After, "count")
 	if goodsNum <= 0 {
 		goodsNum = 1
 	}
-	instanceRole := strings.ToLower(getStr("instance_role"))
+	instanceRole := strings.ToLower(getStr(r.After, "instance_role"))
 	if instanceRole == "" {
 		instanceRole = "master"
 	}
 
-	chargeType := strings.ToUpper(getStr("charge_type"))
+	chargeType := strings.ToUpper(getStr(r.After, "charge_type"))
 	payType := "HOUR_PAID"
 	period := int64(1)
-	if p := getInt("prepaid_period"); p > 0 {
+	if p := getInt(r.After, "prepaid_period"); p > 0 {
 		period = p
-	} else if p := getInt("period"); p > 0 {
+	} else if p := getInt(r.After, "period"); p > 0 {
 		period = p
 	}
 	if chargeType == "PREPAID" || chargeType == "PRE_PAID" {
@@ -93,13 +75,13 @@ func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 		"PayType":      payType,
 		"Period":       period,
 	}
-	if cpu := getInt("cpu"); cpu > 0 {
+	if cpu := getInt(r.After, "cpu"); cpu > 0 {
 		params["Cpu"] = cpu
 	}
-	if deviceType := getStr("device_type"); deviceType != "" {
+	if deviceType := getStr(r.After, "device_type"); deviceType != "" {
 		params["DeviceType"] = strings.ToUpper(deviceType)
 	}
-	if nodes := getInt("instance_nodes"); nodes > 0 {
+	if nodes := getInt(r.After, "instance_nodes"); nodes > 0 {
 		params["InstanceNodes"] = nodes
 	}
 

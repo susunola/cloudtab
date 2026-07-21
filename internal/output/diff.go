@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 
 	"github.com/olekukonko/tablewriter"
@@ -20,20 +21,20 @@ const (
 )
 
 type ResourceDiff struct {
-	Address        string   `json:"address"`
-	Type           string   `json:"type"`
-	Kind           DiffKind `json:"kind"`
-	BeforeMonthly  float64  `json:"before_monthly"`
-	AfterMonthly   float64  `json:"after_monthly"`
-	DeltaMonthly   float64  `json:"delta_monthly"`
+	Address       string   `json:"address"`
+	Type          string   `json:"type"`
+	Kind          DiffKind `json:"kind"`
+	BeforeMonthly float64  `json:"before_monthly"`
+	AfterMonthly  float64  `json:"after_monthly"`
+	DeltaMonthly  float64  `json:"delta_monthly"`
 }
 
 type DiffReport struct {
-	Resources     []ResourceDiff `json:"resources"`
-	BeforeTotal   float64        `json:"before_total"`
-	AfterTotal    float64        `json:"after_total"`
-	DeltaTotal    float64        `json:"delta_total"`
-	Currency      string         `json:"currency"`
+	Resources   []ResourceDiff `json:"resources"`
+	BeforeTotal float64        `json:"before_total"`
+	AfterTotal  float64        `json:"after_total"`
+	DeltaTotal  float64        `json:"delta_total"`
+	Currency    string         `json:"currency"`
 }
 
 // ComputeDiff pairs resources by address and computes monthly delta.
@@ -63,7 +64,7 @@ func ComputeDiff(before, after Report) DiffReport {
 		if ar, ok := am[addr]; ok {
 			aTotal := sumComps(ar)
 			kind := DiffSame
-			if aTotal != bTotal {
+			if math.Abs(aTotal-bTotal) > 1e-6 {
 				kind = DiffChange
 			}
 			out.Resources = append(out.Resources, ResourceDiff{

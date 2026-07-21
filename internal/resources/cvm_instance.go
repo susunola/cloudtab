@@ -16,30 +16,14 @@ import (
 type CVMInstance struct{}
 
 func (CVMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return v
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		}
-		return 0
-	}
-
-	instanceType := getStr("instance_type")
-	imageID := getStr("image_id")
-	zone := getStr("availability_zone")
+	instanceType := getStr(r.After, "instance_type")
+	imageID := getStr(r.After, "image_id")
+	zone := getStr(r.After, "availability_zone")
 	if instanceType == "" || imageID == "" || zone == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_instance requires instance_type/image_id/availability_zone")
 	}
 
-	chargeType := getStr("instance_charge_type")
+	chargeType := getStr(r.After, "instance_charge_type")
 	if chargeType == "" {
 		chargeType = "POSTPAID_BY_HOUR"
 	}
@@ -51,16 +35,16 @@ func (CVMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 		"InstanceChargeType": chargeType,
 		"InstanceCount":      1,
 	}
-	if sd := getStr("system_disk_type"); sd != "" {
+	if sd := getStr(r.After, "system_disk_type"); sd != "" {
 		params["SystemDisk"] = map[string]interface{}{
 			"DiskType": sd,
-			"DiskSize": getInt("system_disk_size"),
+			"DiskSize": getInt(r.After, "system_disk_size"),
 		}
 	}
 	if chargeType == "PREPAID" {
 		params["InstanceChargePrepaid"] = map[string]interface{}{
-			"Period":    getInt("instance_charge_type_prepaid_period"),
-			"RenewFlag": getStr("instance_charge_type_prepaid_renew_flag"),
+			"Period":    getInt(r.After, "instance_charge_type_prepaid_period"),
+			"RenewFlag": getStr(r.After, "instance_charge_type_prepaid_renew_flag"),
 		}
 	}
 
@@ -102,11 +86,13 @@ func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		Currency:    "CNY",
 	}}
 	if wrap.Price.BandwidthPrice.UnitPrice > 0 {
+		bw := wrap.Price.BandwidthPrice
+		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, 0)
 		comps = append(comps, output.CostComponent{
 			Name:        "Public bandwidth",
-			Unit:        wrap.Price.BandwidthPrice.ChargeUnit,
-			HourlyCost:  wrap.Price.BandwidthPrice.UnitPriceDiscount,
-			MonthlyCost: wrap.Price.BandwidthPrice.UnitPriceDiscount * 730,
+			Unit:        bw.ChargeUnit,
+			HourlyCost:  bwHourly,
+			MonthlyCost: bwMonthly,
 			Currency:    "CNY",
 		})
 	}

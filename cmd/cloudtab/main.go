@@ -11,16 +11,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
 	"github.com/susunola/cloudtab/internal/pricing"
 	"github.com/susunola/cloudtab/internal/resources"
 )
+
+const maxConcurrency = 8
 
 func main() {
 	root := &cobra.Command{
@@ -34,12 +36,14 @@ func main() {
 		region    string
 		format    string
 		usageFile string
+		noCache   bool
+		cacheDir  string
 	)
 	breakdown := &cobra.Command{
 		Use:   "breakdown",
 		Short: "Show monthly cost of a Terraform plan",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(region)
+			engine, err := newEngine(region, noCache, cacheDir)
 			if err != nil {
 				return err
 			}
@@ -60,6 +64,8 @@ func main() {
 	breakdown.Flags().StringVar(&region, "region", "ap-guangzhou", "Default region for pricing lookup")
 	breakdown.Flags().StringVar(&usageFile, "usage-file", "", "Path to usage.yml assumptions (optional)")
 	breakdown.Flags().StringVar(&format, "format", "table", "Output format: table|json")
+	breakdown.Flags().BoolVar(&noCache, "no-cache", false, "Disable on-disk price cache")
+	breakdown.Flags().StringVar(&cacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 
 	// -- diff --
 	var (
@@ -69,12 +75,14 @@ func main() {
 		diffReg         string
 		beforeUsageFile string
 		afterUsageFile  string
+		diffNoCache     bool
+		diffCacheDir    string
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
 		Short: "Compare monthly cost between two plans (before -> after)",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(diffReg)
+			engine, err := newEngine(diffReg, diffNoCache, diffCacheDir)
 			if err != nil {
 				return err
 			}
@@ -106,6 +114,8 @@ func main() {
 	diff.Flags().StringVar(&beforeUsageFile, "before-usage-file", "", "Path to usage.yml for --before plan (optional)")
 	diff.Flags().StringVar(&afterUsageFile, "after-usage-file", "", "Path to usage.yml for --after plan (optional)")
 	diff.Flags().StringVar(&diffFmt, "format", "table", "Output format: table|json|markdown")
+	diff.Flags().BoolVar(&diffNoCache, "no-cache", false, "Disable on-disk price cache")
+	diff.Flags().StringVar(&diffCacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
@@ -117,13 +127,24 @@ func main() {
 	}
 }
 
-func newEngine(region string) (*pricing.Engine, error) {
+func newEngine(region string, noCache bool, cacheDir string) (*pricing.Engine, error) {
 	return pricing.NewEngine(pricing.Config{
 		SecretID:  os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		SecretKey: os.Getenv("TENCENTCLOUD_SECRET_KEY"),
 		Region:    region,
-		CachePath: os.ExpandEnv("$HOME/.cloudtab/cache.db"),
+		CachePath: cachePathForFlags(noCache, cacheDir),
+		NoCache:   noCache,
 	})
+}
+
+func cachePathForFlags(noCache bool, cacheDir string) string {
+	if noCache {
+		return ""
+	}
+	if cacheDir == "" {
+		cacheDir = os.ExpandEnv("$HOME/.cloudtab")
+	}
+	return filepath.Join(cacheDir, "cache.db")
 }
 
 // priceReport is the shared pipeline: parse plan -> dispatch to mappers -> collect cost.
@@ -138,37 +159,45 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 	}
 	registry := resources.DefaultRegistry()
 
-	const maxConcurrency = 8
-	sem := make(chan struct{}, maxConcurrency)
+	jobs := make(chan parser.PlannedResource, len(plan.Resources))
 	var mu sync.Mutex
-	var g errgroup.Group
+	var wg sync.WaitGroup
+	errs := make(chan error, maxConcurrency)
+
+	for i := 0; i < maxConcurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := range jobs {
+				cost, skip, err := priceResource(engine, registry, r)
+				if err != nil {
+					errs <- fmt.Errorf("%s: %w", r.Address, err)
+					return
+				}
+				mu.Lock()
+				if cost != nil {
+					rep.Resources = append(rep.Resources, *cost)
+				}
+				if skip != nil {
+					rep.Skipped = append(rep.Skipped, *skip)
+				}
+				mu.Unlock()
+			}
+		}()
+	}
 
 	for _, r := range plan.Resources {
-		r := r
 		if u, ok := usage[r.Address]; ok {
 			r = mergeUsageIntoAfter(r, u)
 		}
-		g.Go(func() error {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			cost, skip, err := priceResource(engine, registry, r)
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			if cost != nil {
-				rep.Resources = append(rep.Resources, *cost)
-			}
-			if skip != nil {
-				rep.Skipped = append(rep.Skipped, *skip)
-			}
-			mu.Unlock()
-			return nil
-		})
+		jobs <- r
 	}
-	if err := g.Wait(); err != nil {
-		return rep, err
+	close(jobs)
+	wg.Wait()
+	close(errs)
+
+	if first, ok := <-errs; ok {
+		return rep, first
 	}
 	return rep, nil
 }

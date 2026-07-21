@@ -29,6 +29,7 @@ type Config struct {
 	SecretKey string
 	Region    string
 	CachePath string // BoltDB file path; empty = no cache
+	NoCache   bool   // when true, cache is disabled even if CachePath is set
 }
 
 // PriceRequest is the neutral request submitted by a Mapper.
@@ -63,10 +64,13 @@ func NewEngine(cfg Config) (*Engine, error) {
 		return nil, errors.New("missing TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
 	}
 	e := &Engine{cfg: cfg, clients: map[string]interface{}{}}
-	if cfg.CachePath != "" {
+	if cfg.CachePath != "" && !cfg.NoCache {
 		c, err := openCache(cfg.CachePath)
 		if err != nil {
-			return nil, fmt.Errorf("open cache: %w", err)
+			// Cache is an optimization, not a correctness requirement. If another
+			// process holds the lock or the path is unusable, degrade gracefully
+			// to an uncached engine rather than failing the whole cost run.
+			return e, nil
 		}
 		e.cache = c
 	}

@@ -26,27 +26,11 @@ func (EIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, 
 }
 
 func (EIP) Estimate(r parser.PlannedResource) ([]output.CostComponent, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return v
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		}
-		return 0
-	}
-
-	chargeType := getStr("internet_charge_type")
+	chargeType := getStr(r.After, "internet_charge_type")
 	if chargeType == "" {
 		chargeType = "BANDWIDTH_POSTPAID_BY_HOUR"
 	}
-	bw := getInt("internet_max_bandwidth_out")
+	bw := getInt(r.After, "internet_max_bandwidth_out")
 	if bw == 0 {
 		bw = 1
 	}

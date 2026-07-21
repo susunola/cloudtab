@@ -20,29 +20,13 @@ import (
 type CLBInstance struct{}
 
 func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return v
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		}
-		return 0
-	}
-
-	lbType := getStr("network_type") // OPEN | INTERNAL
+	lbType := getStr(r.After, "network_type") // OPEN | INTERNAL
 	if lbType == "" {
 		lbType = "OPEN"
 	}
-	forward := getStr("clb_type")   // "PERFORMANCE" | "SHARED" — legacy compat
-	slaType := getStr("sla_type")   // clb.c2.medium etc for LCU-CLB
-	chargeType := getStr("internet_charge_type")
+	forward := getStr(r.After, "clb_type") // "PERFORMANCE" | "SHARED" — legacy compat
+	slaType := getStr(r.After, "sla_type") // clb.c2.medium etc for LCU-CLB
+	chargeType := getStr(r.After, "internet_charge_type")
 	if chargeType == "" {
 		chargeType = "TRAFFIC_POSTPAID_BY_HOUR"
 	}
@@ -57,9 +41,9 @@ func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	if slaType != "" {
 		params["SlaType"] = slaType
 	}
-	if bw := getInt("internet_max_bandwidth_out"); bw > 0 {
+	if bw := getInt(r.After, "internet_max_bandwidth_out"); bw > 0 {
 		params["InternetAccessible"] = map[string]interface{}{
-			"InternetChargeType":     chargeType,
+			"InternetChargeType":      chargeType,
 			"InternetMaxBandwidthOut": bw,
 		}
 	}
@@ -103,11 +87,13 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		Currency:    "CNY",
 	}}
 	if wrap.Price.BandwidthPrice.UnitPrice > 0 {
+		bw := wrap.Price.BandwidthPrice
+		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, 0)
 		comps = append(comps, output.CostComponent{
 			Name:        "CLB bandwidth",
-			Unit:        wrap.Price.BandwidthPrice.ChargeUnit,
-			HourlyCost:  wrap.Price.BandwidthPrice.UnitPriceDiscount,
-			MonthlyCost: wrap.Price.BandwidthPrice.UnitPriceDiscount * 730,
+			Unit:        bw.ChargeUnit,
+			HourlyCost:  bwHourly,
+			MonthlyCost: bwMonthly,
 			Currency:    "CNY",
 		})
 	}

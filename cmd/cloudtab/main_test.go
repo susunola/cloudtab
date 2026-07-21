@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/susunola/cloudtab/internal/parser"
@@ -38,5 +40,30 @@ func TestMergeUsageIntoAfter(t *testing.T) {
 	// Ensure original map is not mutated.
 	if got := orig.After["mem_size"]; got != 1024 {
 		t.Fatalf("orig.mem_size mutated to %v, want 1024", got)
+	}
+}
+
+func TestCachePathForFlags(t *testing.T) {
+	if got := cachePathForFlags(true, ""); got != "" {
+		t.Fatalf("no-cache: got %q, want empty", got)
+	}
+	if got := cachePathForFlags(false, "/tmp/ct"); got != filepath.Join("/tmp/ct", "cache.db") {
+		t.Fatalf("custom dir: got %q, want %q", got, filepath.Join("/tmp/ct", "cache.db"))
+	}
+	// Default path is relative to $HOME; just assert it ends with the expected file.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := cachePathForFlags(false, ""); got != filepath.Join(home, ".cloudtab", "cache.db") {
+		t.Fatalf("default: got %q, want %q", got, filepath.Join(home, ".cloudtab", "cache.db"))
+	}
+}
+
+func TestEngineCreationWithCacheDir(t *testing.T) {
+	// Ensure newEngine does not fail due to cache dir when env creds are missing.
+	os.Unsetenv("TENCENTCLOUD_SECRET_ID")
+	os.Unsetenv("TENCENTCLOUD_SECRET_KEY")
+	_, err := newEngine("ap-guangzhou", false, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error without credentials")
 	}
 }

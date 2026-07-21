@@ -16,50 +16,34 @@ import (
 type CBSStorage struct{}
 
 func (CBSStorage) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	getStr := func(k string) string {
-		if v, ok := r.After[k].(string); ok {
-			return v
-		}
-		return ""
-	}
-	getInt := func(k string) int64 {
-		switch v := r.After[k].(type) {
-		case float64:
-			return int64(v)
-		case int:
-			return int64(v)
-		}
-		return 0
-	}
-
-	diskType := getStr("storage_type")
+	diskType := getStr(r.After, "storage_type")
 	if diskType == "" {
-		diskType = getStr("disk_type")
+		diskType = getStr(r.After, "disk_type")
 	}
-	size := getInt("storage_size")
+	size := getInt(r.After, "storage_size")
 	if size == 0 {
-		size = getInt("disk_size")
+		size = getInt(r.After, "disk_size")
 	}
-	zone := getStr("availability_zone")
+	zone := getStr(r.After, "availability_zone")
 	if diskType == "" || size == 0 || zone == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_cbs_storage requires storage_type/storage_size/availability_zone")
 	}
 
-	chargeType := getStr("charge_type")
+	chargeType := getStr(r.After, "charge_type")
 	if chargeType == "" {
 		chargeType = "POSTPAID_BY_HOUR"
 	}
 
 	params := map[string]interface{}{
-		"DiskType":         diskType,
-		"DiskSize":         size,
-		"DiskChargeType":   chargeType,
-		"DiskCount":        1,
-		"Placement":        map[string]interface{}{"Zone": zone},
+		"DiskType":       diskType,
+		"DiskSize":       size,
+		"DiskChargeType": chargeType,
+		"DiskCount":      1,
+		"Placement":      map[string]interface{}{"Zone": zone},
 	}
 	if chargeType == "PREPAID" {
 		params["DiskChargePrepaid"] = map[string]interface{}{
-			"Period": getInt("prepaid_period"),
+			"Period": getInt(r.After, "prepaid_period"),
 		}
 	}
 
