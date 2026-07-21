@@ -53,6 +53,27 @@ terraform show -json tf.plan > plan.json
 cloudtab breakdown --path plan.json --region ap-guangzhou
 ```
 
+### Chinese-mainland vs International site
+
+Tencent Cloud runs **two independent sites** with separate account systems: the
+Chinese-mainland site (`*.tencentcloudapi.com`) and the International site
+(`*.intl.tencentcloudapi.com`). A given `SecretId`/`SecretKey` is registered on
+exactly **one** of them, so the site is chosen by your **credential — not the
+region** (both sites expose overlapping region names such as `ap-guangzhou` /
+`ap-singapore`). Select it explicitly to match your key:
+
+```bash
+# International-site credential
+cloudtab breakdown --path plan.json --region ap-singapore --site intl
+# or via env (flag takes precedence)
+export TENCENTCLOUD_SITE=intl
+```
+
+`--site` accepts `domestic` (default) or `intl`; any other value is passed
+through verbatim as a custom root domain (e.g. a private-cloud gateway). Prices
+are cached separately per site, so switching sites never returns a stale
+cross-site price.
+
 Sample output:
 
 ```

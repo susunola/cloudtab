@@ -3,7 +3,13 @@
 //
 // Each per-type Mapper produces a PriceRequest with a Product/Action pair;
 // the engine routes to the right SDK client, executes InquiryPriceXxx,
-// caches the raw JSON response keyed by sha256(request), and returns it.
+// caches the raw JSON response keyed by sha256(request) namespaced by site,
+// and returns it.
+//
+// Site selection: Tencent Cloud runs two independent sites (Chinese-mainland
+// and International) chosen by the credential, not the region. The engine
+// applies Config.Site via the SDK's RootDomain and isolates the cache per site
+// so the two never share entries. See Config.Site and rootDomainForSite.
 package pricing
 
 import (
@@ -12,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -25,6 +32,42 @@ type Config struct {
 	Region    string
 	CachePath string // BoltDB file path; empty = no cache
 	NoCache   bool   // when true, cache is disabled even if CachePath is set
+
+	// Site selects which Tencent Cloud site the credential belongs to.
+	//
+	// Tencent Cloud runs two fully independent sites with separate account
+	// systems: the Chinese-mainland site (api host <product>.tencentcloudapi.com)
+	// and the International site (<product>.intl.tencentcloudapi.com). A given
+	// SecretID/SecretKey pair is registered on exactly ONE of them, so the site
+	// is NOT derivable from the region (both sites expose overlapping region
+	// names such as ap-guangzhou / ap-singapore). It must be selected explicitly
+	// to match the credential.
+	//
+	// Accepted values (case-insensitive, whitespace-trimmed):
+	//   "" | "domestic" | "cn" | "china"          -> Chinese-mainland site (default)
+	//   "intl" | "international" | "global"        -> International site
+	// Any other non-empty value is treated as a literal root domain override
+	// (e.g. a private-cloud gateway), passed through to the SDK unchanged.
+	Site string
+}
+
+// rootDomainForSite maps a Site selector to the SDK RootDomain suffix.
+//
+// Returning "" lets the SDK fall back to its built-in default
+// ("tencentcloudapi.com"), which is exactly the Chinese-mainland site, so the
+// default (empty Site) preserves the historical behaviour. Selecting the
+// international site yields "intl.tencentcloudapi.com"; the SDK then assembles
+// the per-product host as "<product>.intl.tencentcloudapi.com". Any other
+// non-empty value is treated as a literal root-domain override.
+func rootDomainForSite(site string) string {
+	switch strings.ToLower(strings.TrimSpace(site)) {
+	case "", "domestic", "cn", "china":
+		return "" // SDK default -> tencentcloudapi.com (Chinese-mainland site)
+	case "intl", "international", "global", "overseas":
+		return "intl.tencentcloudapi.com"
+	default:
+		return strings.TrimSpace(site) // literal root-domain override
+	}
 }
 
 // PriceRequest is the neutral request submitted by a Mapper.
@@ -92,15 +135,18 @@ func (e *Engine) Close() error {
 // Query dispatches to the right SDK client and returns the raw response JSON.
 // The per-type Mapper decodes it into typed CostComponents.
 func (e *Engine) Query(req PriceRequest) ([]byte, error) {
-	if e.cache != nil {
-		key, err := req.CacheKey()
-		if err != nil {
-			return nil, err
-		}
+	// The cache key must include the site: the Chinese-mainland and
+	// International sites return different prices (and possibly currencies) for
+	// an otherwise identical request, so their responses must never collide.
+	// A key failure is non-fatal — we simply run uncached for this request.
+	key, keyErr := e.cacheKey(req)
+
+	if e.cache != nil && keyErr == nil {
 		if hit, ok := e.cache.Get(key); ok {
 			return hit, nil
 		}
 	}
+
 	region := req.Region
 	if region == "" {
 		region = e.cfg.Region
@@ -114,15 +160,24 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if e.cache != nil {
-		key, kerr := req.CacheKey()
-		if kerr != nil {
-			// Cache key failure is non-fatal; just skip caching this response.
-			return resp, nil
-		}
+
+	if e.cache != nil && keyErr == nil {
 		_ = e.cache.Put(key, resp)
 	}
 	return resp, nil
+}
+
+// cacheKey derives the on-disk cache key for a request under the engine's
+// current site. It namespaces the request's own CacheKey() with the normalized
+// site root domain so responses from different sites never collide.
+func (e *Engine) cacheKey(req PriceRequest) (string, error) {
+	base, err := req.CacheKey()
+	if err != nil {
+		return "", err
+	}
+	// rootDomainForSite("") == "" (Chinese-mainland default); using it as a
+	// prefix keeps pre-existing domestic keys stable while isolating intl.
+	return rootDomainForSite(e.cfg.Site) + "|" + base, nil
 }
 
 // clientFn builds a typed SDK client from a credential/profile pair.
@@ -142,7 +197,14 @@ func (e *Engine) client(product, region string, newFn clientFn) (interface{}, er
 
 	credential := tcCommon.NewCredential(e.cfg.SecretID, e.cfg.SecretKey)
 	prof := tcProfile.NewClientProfile()
-	prof.HttpProfile.Endpoint = product + ".tencentcloudapi.com"
+	// Select the site (domestic vs international) via the SDK's RootDomain, which
+	// the SDK combines with the product name to build "<product>.<rootDomain>".
+	// We deliberately do NOT set HttpProfile.Endpoint here: Endpoint is a full
+	// host that takes precedence over RootDomain and would pin every product to
+	// the Chinese-mainland site, defeating international-site credentials.
+	if rd := rootDomainForSite(e.cfg.Site); rd != "" {
+		prof.HttpProfile.RootDomain = rd
+	}
 
 	c, err := newFn(credential, prof)
 	if err != nil {

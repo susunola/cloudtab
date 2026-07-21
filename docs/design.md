@@ -119,7 +119,7 @@ M1-M4 大约 6 周就有可用产品，比 Infracost 早期路径快得多，因
 - **国内目前无对标产品**（Infracost 明确 not supporting Tencent Cloud）
 - 腾讯云自己的[费用中心账单](https://console.cloud.tencent.com/expense/bill)是**事后**的，PR 阶段无
 - [tencentcloudstack/terraform-provider-tencentcloud](https://github.com/tencentcloudstack/terraform-provider-tencentcloud) 是官方 provider，成熟度高，可以稳定依赖
-- 出海用户：腾讯云海外（intl）走同样 API，只是 endpoint 不同（intl.tencentcloudapi.com），代码里加一个 env switch 即可
+- 出海用户：腾讯云海外（intl）走同样 API，只是 endpoint 不同（intl.tencentcloudapi.com）。**已实现**（见 §六「国内/国际站切换」）
 
 ## 五、开源策略建议
 
@@ -136,3 +136,29 @@ M1-M4 大约 6 周就有可用产品，比 Infracost 早期路径快得多，因
 3. **可用区细化**（ap-shanghai-2 vs ap-shanghai-5，S5.MEDIUM4 在不同 zone 价格一致但需要真实 zone 传入）→ 用户没写 zone 时给个默认或报错
 4. **镜像 ID 是必填项**但询价场景其实和镜像无关 → 用一个公共镜像常量占位（`img-pmqg1cw7`）
 5. **跨区域**（跨 region 的 plan）→ Mapper 从 `r.Region` 取 region，不是全局默认
+
+## 七、国内 / 国际站切换（已实现）
+
+腾讯云有**两套完全独立的站点**，账号体系不互通：
+
+| | 国内站 | 国际站 |
+|---|---|---|
+| API host | `<product>.tencentcloudapi.com` | `<product>.intl.tencentcloudapi.com` |
+| 账号 / AK-SK | 独立 | 独立 |
+
+**关键认知：站点由 AK/SK 决定，不是 region。** 两个站点的 region 名字大量重叠（都有
+`ap-guangzhou`/`ap-singapore` 等），所以**不能靠 region 推断站点**——同一个 AK/SK
+只在它注册的那个站有效，用错站直接鉴权失败。
+
+**实现要点**：
+
+- `pricing.Config.Site` 选择站点：`""`/`domestic`/`cn`/`china` → 国内站；
+  `intl`/`international`/`global`/`overseas` → 国际站；其他非空值当作**字面 root
+  domain 覆盖**（专有云/代理网关场景）。
+- **用 SDK 原生的 `HttpProfile.RootDomain`**（`GetServiceDomain` 会拼成
+  `<product>.<rootDomain>`），**不再硬写 `HttpProfile.Endpoint`**——`Endpoint` 是完整
+  host、优先级高于 `RootDomain`，一旦写死就会把所有产品钉死在国内站，国际站 AK/SK 失效。
+  这正是本次修复的核心 bug（原 `engine.go` 写死了 `product + ".tencentcloudapi.com"`）。
+- 国内站 `RootDomain=""` 走 SDK 默认（= `tencentcloudapi.com`），**默认行为与历史完全一致**（向后兼容）。
+- **缓存按 site 隔离**：cache key 用规范化 root domain 做前缀命名空间，避免国内价被当成国际价（或反之）返回——两站价格/币种可能不同。
+- CLI：`--site` flag（优先）> `TENCENTCLOUD_SITE` 环境变量 > 默认国内站。

@@ -62,8 +62,29 @@ func TestEngineCreationWithCacheDir(t *testing.T) {
 	// Ensure newEngine does not fail due to cache dir when env creds are missing.
 	os.Unsetenv("TENCENTCLOUD_SECRET_ID")
 	os.Unsetenv("TENCENTCLOUD_SECRET_KEY")
-	_, err := newEngine("ap-guangzhou", false, t.TempDir())
+	_, err := newEngine("ap-guangzhou", "", false, t.TempDir())
 	if err == nil {
 		t.Fatal("expected error without credentials")
+	}
+}
+
+func TestResolveSite(t *testing.T) {
+	// Flag wins over env.
+	t.Setenv("TENCENTCLOUD_SITE", "domestic")
+	if got := resolveSite("intl"); got != "intl" {
+		t.Errorf("flag should win: got %q, want intl", got)
+	}
+	// Flag is whitespace-trimmed.
+	if got := resolveSite("  intl  "); got != "intl" {
+		t.Errorf("flag trim: got %q, want intl", got)
+	}
+	// Empty flag falls back to env.
+	if got := resolveSite(""); got != "domestic" {
+		t.Errorf("env fallback: got %q, want domestic", got)
+	}
+	// Empty flag + empty env -> empty (engine treats as domestic default).
+	t.Setenv("TENCENTCLOUD_SITE", "")
+	if got := resolveSite(""); got != "" {
+		t.Errorf("default: got %q, want empty", got)
 	}
 }

@@ -6,6 +6,11 @@
 //	cloudtab diff --before plan.old.json --after plan.new.json [--format markdown]
 //
 // Auth: reads TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY from env.
+//
+// Site: Tencent Cloud has two independent sites (Chinese-mainland and
+// International) with separate account systems. The site is chosen by the
+// credential, not the region, so it is selected explicitly with --site
+// (domestic|intl) or the TENCENTCLOUD_SITE env var. Default is domestic.
 package main
 
 import (
@@ -13,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -50,12 +56,13 @@ func main() {
 		usageFile string
 		noCache   bool
 		cacheDir  string
+		site      string
 	)
 	breakdown := &cobra.Command{
 		Use:   "breakdown",
 		Short: "Show monthly cost of a Terraform plan",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(region, noCache, cacheDir)
+			engine, err := newEngine(region, site, noCache, cacheDir)
 			if err != nil {
 				return err
 			}
@@ -78,6 +85,7 @@ func main() {
 	breakdown.Flags().StringVar(&format, "format", "table", "Output format: table|json")
 	breakdown.Flags().BoolVar(&noCache, "no-cache", false, "Disable on-disk price cache")
 	breakdown.Flags().StringVar(&cacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
+	breakdown.Flags().StringVar(&site, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
 
 	// -- diff --
 	var (
@@ -89,12 +97,13 @@ func main() {
 		afterUsageFile  string
 		diffNoCache     bool
 		diffCacheDir    string
+		diffSite        string
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
 		Short: "Compare monthly cost between two plans (before -> after)",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(diffReg, diffNoCache, diffCacheDir)
+			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir)
 			if err != nil {
 				return err
 			}
@@ -128,6 +137,7 @@ func main() {
 	diff.Flags().StringVar(&diffFmt, "format", "table", "Output format: table|json|markdown")
 	diff.Flags().BoolVar(&diffNoCache, "no-cache", false, "Disable on-disk price cache")
 	diff.Flags().StringVar(&diffCacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
+	diff.Flags().StringVar(&diffSite, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
@@ -139,14 +149,25 @@ func main() {
 	}
 }
 
-func newEngine(region string, noCache bool, cacheDir string) (*pricing.Engine, error) {
+func newEngine(region, site string, noCache bool, cacheDir string) (*pricing.Engine, error) {
 	return pricing.NewEngine(pricing.Config{
 		SecretID:  os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		SecretKey: os.Getenv("TENCENTCLOUD_SECRET_KEY"),
 		Region:    region,
+		Site:      resolveSite(site),
 		CachePath: cachePathForFlags(noCache, cacheDir),
 		NoCache:   noCache,
 	})
+}
+
+// resolveSite picks the Tencent Cloud site with an explicit precedence: the
+// --site flag wins; otherwise fall back to the TENCENTCLOUD_SITE env var;
+// otherwise empty (which the engine treats as the Chinese-mainland default).
+func resolveSite(flagSite string) string {
+	if s := strings.TrimSpace(flagSite); s != "" {
+		return s
+	}
+	return strings.TrimSpace(os.Getenv("TENCENTCLOUD_SITE"))
 }
 
 func cachePathForFlags(noCache bool, cacheDir string) string {
