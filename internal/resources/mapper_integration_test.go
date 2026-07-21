@@ -567,6 +567,344 @@ func TestPrepaidPricesSingleMonth(t *testing.T) {
 	}
 }
 
+// ----- Lighthouse integration test -----
+
+func TestLighthouseExtractAndParse(t *testing.T) {
+	m := LighthouseInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_lighthouse_instance.lh",
+		Type:    "tencentcloud_lighthouse_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"bundle_id":      "bundle_gen_01",
+			"blueprint_id":   "lhbp-xxx",
+			"instance_count": 1,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Lighthouse Extract: %v", err)
+	}
+	if req.Product != "lighthouse" || req.Action != "InquirePriceCreateInstances" {
+		t.Fatalf("Lighthouse product/action = %q/%q", req.Product, req.Action)
+	}
+	// Period must always be a single month.
+	prepaid, _ := req.Params["InstanceChargePrepaid"].(map[string]interface{})
+	if prepaid == nil || prepaid["Period"] != 1 {
+		t.Errorf("Lighthouse Period = %v, want 1", prepaid)
+	}
+
+	// Price.InstancePrice is a monthly total in 元.
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"OriginalPrice":50,"DiscountPrice":45}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Lighthouse Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("Lighthouse components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 45 {
+		t.Errorf("Lighthouse monthly = %v, want 45 (discounted)", comps[0].MonthlyCost)
+	}
+	if comps[0].HourlyCost != 0 {
+		t.Errorf("Lighthouse hourly = %v, want 0 (prepaid)", comps[0].HourlyCost)
+	}
+}
+
+// ----- ECM integration test -----
+
+func TestECMExtractAndParse(t *testing.T) {
+	m := ECMInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_ecm_instance.edge",
+		Type:    "tencentcloud_ecm_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"instance_type":    "ec.small1.medium2",
+			"instance_count":   1,
+			"system_disk_size": 50,
+			"system_disk_type": "CLOUD_PREMIUM",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("ECM Extract: %v", err)
+	}
+	if req.Product != "ecm" || req.Action != "DescribePriceRunInstance" {
+		t.Fatalf("ECM product/action = %q/%q", req.Product, req.Action)
+	}
+	// SystemDisk must be a nested object with the disk size.
+	disk, _ := req.Params["SystemDisk"].(map[string]interface{})
+	if disk == nil || disk["DiskSize"] != int64(50) {
+		t.Errorf("ECM SystemDisk = %v, want DiskSize 50", req.Params["SystemDisk"])
+	}
+
+	// InstancePrice is uint64 分; 120分 = 1.2元/h.
+	raw := []byte(`{"Response":{"InstancePrice":{"OriginalPrice":150,"DiscountPrice":120}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("ECM Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("ECM components = %d, want 1", len(comps))
+	}
+	if comps[0].HourlyCost != 1.2 {
+		t.Errorf("ECM hourly = %v, want 1.2", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 1.2*hoursPerMonth {
+		t.Errorf("ECM monthly = %v, want %v", comps[0].MonthlyCost, 1.2*hoursPerMonth)
+	}
+}
+
+// ----- SQL Server integration test -----
+
+func TestSQLServerExtractAndParse(t *testing.T) {
+	m := SQLServerInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_sqlserver_instance.mssql",
+		Type:    "tencentcloud_sqlserver_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3",
+			"memory":            4,
+			"storage":           100,
+			"charge_type":       "PREPAID",
+			"prepaid_period":    12,
+			"cpu":               2,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("SQLServer Extract: %v", err)
+	}
+	if req.Product != "sqlserver" || req.Action != "InquiryPriceCreateDBInstances" {
+		t.Fatalf("SQLServer product/action = %q/%q", req.Product, req.Action)
+	}
+	// Even with prepaid_period=12, Period must be forced to a single month.
+	if req.Params["Period"] != 1 {
+		t.Errorf("SQLServer Period = %v, want 1", req.Params["Period"])
+	}
+
+	// PREPAID: Price is int64 分 (monthly total); 15000分 = 150元.
+	raw := []byte(`{"Response":{"Price":15000,"OriginalPrice":20000}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("SQLServer Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("SQLServer components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 150 {
+		t.Errorf("SQLServer monthly = %v, want 150", comps[0].MonthlyCost)
+	}
+}
+
+func TestSQLServerPostpaidHourly(t *testing.T) {
+	m := SQLServerInstance{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_sqlserver_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"zone":        "ap-guangzhou-3",
+			"memory":      4,
+			"storage":     100,
+			"charge_type": "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("SQLServer Extract: %v", err)
+	}
+	if req.Params["InstanceChargeType"] != "POSTPAID" {
+		t.Errorf("SQLServer charge type = %v, want POSTPAID", req.Params["InstanceChargeType"])
+	}
+	// POSTPAID: 50分/h = 0.5元/h.
+	raw := []byte(`{"Response":{"Price":50}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("SQLServer Parse: %v", err)
+	}
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("SQLServer hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("SQLServer monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
+	}
+}
+
+// ----- DCDB (TDSQL MySQL) integration test -----
+
+func TestDCDBExtractAndParse(t *testing.T) {
+	m := DCDBInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_dcdb_instance.tdsql",
+		Type:    "tencentcloud_dcdb_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"zones":                []interface{}{"ap-guangzhou-3", "ap-guangzhou-4"},
+			"shard_memory":         8,
+			"shard_storage":        200,
+			"shard_count":          2,
+			"shard_node_count":     2,
+			"instance_charge_type": "PREPAID",
+			"prepaid_period":       12,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("DCDB Extract: %v", err)
+	}
+	if req.Product != "dcdb" || req.Action != "DescribeDCDBPrice" {
+		t.Fatalf("DCDB product/action = %q/%q", req.Product, req.Action)
+	}
+	if req.Params["Zone"] != "ap-guangzhou-3" {
+		t.Errorf("DCDB Zone = %v, want first of zones list", req.Params["Zone"])
+	}
+	if req.Params["Paymode"] != "prepaid" {
+		t.Errorf("DCDB Paymode = %v, want prepaid", req.Params["Paymode"])
+	}
+	if req.Params["Period"] != 1 {
+		t.Errorf("DCDB Period = %v, want 1 (multi-month must not leak)", req.Params["Period"])
+	}
+
+	// PREPAID: Price is int64 分 (monthly total); 30000分 = 300元.
+	raw := []byte(`{"Response":{"Price":30000,"OriginalPrice":40000}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("DCDB Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("DCDB components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 300 {
+		t.Errorf("DCDB monthly = %v, want 300", comps[0].MonthlyCost)
+	}
+}
+
+func TestDCDBPostpaidHourly(t *testing.T) {
+	m := DCDBInstance{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_dcdb_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3",
+			"shard_memory":      8,
+			"shard_storage":     200,
+			"shard_count":       2,
+			"charge_type":       "POSTPAID",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("DCDB Extract: %v", err)
+	}
+	if req.Params["Paymode"] != "postpaid" {
+		t.Errorf("DCDB Paymode = %v, want postpaid", req.Params["Paymode"])
+	}
+	// POSTPAID: 60分/h = 0.6元/h.
+	raw := []byte(`{"Response":{"Price":60}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("DCDB Parse: %v", err)
+	}
+	if comps[0].HourlyCost != 0.6 {
+		t.Errorf("DCDB hourly = %v, want 0.6", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.6*hoursPerMonth {
+		t.Errorf("DCDB monthly = %v, want %v", comps[0].MonthlyCost, 0.6*hoursPerMonth)
+	}
+}
+
+// ----- GAAP proxy integration test -----
+
+func TestGAAPExtractAndParse(t *testing.T) {
+	m := GAAPProxy{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_gaap_proxy.acc",
+		Type:    "tencentcloud_gaap_proxy",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"access_region":     "Guangzhou",
+			"realserver_region": "Beijing",
+			"bandwidth":         10,
+			"concurrent":        2,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("GAAP Extract: %v", err)
+	}
+	if req.Product != "gaap" || req.Action != "InquiryPriceCreateProxy" {
+		t.Fatalf("GAAP product/action = %q/%q", req.Product, req.Action)
+	}
+
+	// Daily price in 元; monthly = daily * (730/24).
+	raw := []byte(`{"Response":{"ProxyDailyPrice":12,"DiscountProxyDailyPrice":10}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("GAAP Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("GAAP components = %d, want 1", len(comps))
+	}
+	wantMonthly := 10.0 * daysPerMonth
+	if comps[0].MonthlyCost != wantMonthly {
+		t.Errorf("GAAP monthly = %v, want %v (discounted daily * days)", comps[0].MonthlyCost, wantMonthly)
+	}
+}
+
+func TestGAAPConcurrentPassthrough(t *testing.T) {
+	m := GAAPProxy{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_gaap_proxy",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"access_region":     "Guangzhou",
+			"realserver_region": "Beijing",
+			"bandwidth":         10,
+			// Terraform stores concurrent already in units of 万; pass through.
+			"concurrent": 5,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("GAAP Extract: %v", err)
+	}
+	if req.Params["Concurrent"] != int64(5) {
+		t.Errorf("GAAP Concurrent = %v, want 5 (passed through unchanged)", req.Params["Concurrent"])
+	}
+	// billing_type defaults to 0 (by bandwidth) when absent.
+	if req.Params["BillingType"] != 0 {
+		t.Errorf("GAAP BillingType = %v, want 0 (default by-bandwidth)", req.Params["BillingType"])
+	}
+}
+
+func TestGAAPBillingTypeFlow(t *testing.T) {
+	base := map[string]interface{}{
+		"access_region":     "Guangzhou",
+		"realserver_region": "Beijing",
+		"bandwidth":         10,
+		"concurrent":        2,
+	}
+	// Numeric 1 and string "flow" must both map to BillingType=1 (by flow).
+	for _, bt := range []interface{}{1, "flow", "1"} {
+		after := map[string]interface{}{}
+		for k, v := range base {
+			after[k] = v
+		}
+		after["billing_type"] = bt
+		req, err := (GAAPProxy{}).Extract(parser.PlannedResource{
+			Type: "tencentcloud_gaap_proxy", Region: "ap-guangzhou", After: after,
+		})
+		if err != nil {
+			t.Fatalf("GAAP Extract (billing_type=%v): %v", bt, err)
+		}
+		if req.Params["BillingType"] != 1 {
+			t.Errorf("GAAP BillingType (input %v) = %v, want 1 (by flow)", bt, req.Params["BillingType"])
+		}
+	}
+}
+
 // ----- EIP StaticMapper test -----
 
 func TestEIPEstimate(t *testing.T) {
@@ -607,6 +945,11 @@ func TestDefaultRegistryHasAllTypes(t *testing.T) {
 		"tencentcloud_mongodb_instance",
 		"tencentcloud_mariadb_instance",
 		"tencentcloud_cynosdb_cluster",
+		"tencentcloud_lighthouse_instance",
+		"tencentcloud_ecm_instance",
+		"tencentcloud_sqlserver_instance",
+		"tencentcloud_dcdb_instance",
+		"tencentcloud_gaap_proxy",
 	}
 	for _, tfType := range types {
 		if _, ok := reg.Lookup(tfType); !ok {
@@ -775,6 +1118,38 @@ func TestAllMappersImplementContract(t *testing.T) {
 				"cpu":            2,
 				"memory":         4,
 				"charge_type":    "POSTPAID",
+			},
+		},
+		{
+			addr:  "tencentcloud_lighthouse_instance.lh",
+			typ:   "tencentcloud_lighthouse_instance",
+			after: map[string]interface{}{"bundle_id": "bundle_gen_01", "instance_count": 1},
+		},
+		{
+			addr:  "tencentcloud_ecm_instance.edge",
+			typ:   "tencentcloud_ecm_instance",
+			after: map[string]interface{}{"instance_type": "ec.small1.medium2", "instance_count": 1, "system_disk_size": 50},
+		},
+		{
+			addr: "tencentcloud_sqlserver_instance.mssql",
+			typ:  "tencentcloud_sqlserver_instance",
+			after: map[string]interface{}{
+				"availability_zone": "ap-guangzhou-3", "memory": 4, "storage": 100, "charge_type": "POSTPAID",
+			},
+		},
+		{
+			addr: "tencentcloud_dcdb_instance.tdsql",
+			typ:  "tencentcloud_dcdb_instance",
+			after: map[string]interface{}{
+				"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200,
+				"shard_count": 2, "charge_type": "POSTPAID",
+			},
+		},
+		{
+			addr: "tencentcloud_gaap_proxy.acc",
+			typ:  "tencentcloud_gaap_proxy",
+			after: map[string]interface{}{
+				"access_region": "Guangzhou", "realserver_region": "Beijing", "bandwidth": 10, "concurrent": 2,
 			},
 		},
 	}

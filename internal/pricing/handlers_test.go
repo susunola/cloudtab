@@ -13,6 +13,7 @@ func TestHandlersRegistered(t *testing.T) {
 	want := []string{
 		"cbs", "cdb", "clb", "cvm", "postgres", "redis",
 		"vpc", "mongodb", "mariadb", "cynosdb",
+		"lighthouse", "ecm", "sqlserver", "dcdb", "gaap",
 	}
 	got := SupportedProducts()
 	sort.Strings(got)

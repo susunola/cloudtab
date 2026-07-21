@@ -30,11 +30,15 @@ type Config struct {
 // PriceRequest is the neutral request submitted by a Mapper.
 //
 //	Product: "cvm" | "cbs" | "clb" | "cdb" | "redis" | "postgres" |
-//	         "vpc" | "mongodb" | "mariadb" | "cynosdb" | ...
+//	         "vpc" | "mongodb" | "mariadb" | "cynosdb" | "lighthouse" |
+//	         "ecm" | "sqlserver" | "dcdb" | "gaap" | ...
 //	Action:  "InquiryPriceRunInstances" | "InquiryPriceCreateDisks" |
 //	         "DescribeDBPrice" | "InquiryPriceCreateInstance" |
 //	         "InquiryPriceCreateVpnGateway" | "InquirePriceCreateDBInstances" |
-//	         "DescribePrice" | "InquirePriceCreate" | ...
+//	         "DescribePrice" | "InquirePriceCreate" |
+//	         "InquirePriceCreateInstances" | "DescribePriceRunInstance" |
+//	         "InquiryPriceCreateDBInstances" | "DescribeDCDBPrice" |
+//	         "InquiryPriceCreateProxy" | ...
 //	Region:  ap-guangzhou / ap-shanghai / ...
 //	Params:  action-specific input, will be JSON-marshaled into the SDK request
 type PriceRequest struct {

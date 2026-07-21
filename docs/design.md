@@ -57,7 +57,8 @@ Infracost 选自建（GraphQL server + PostgreSQL），原因：
 ### 决策 1：不自建定价库，直接调询价 API
 
 **理由**：
-- 腾讯云大部分产品都有询价接口（已验证并接入 CVM/CBS/CDB/CLB/Redis/PostgreSQL/VPN 网关/MongoDB/MariaDB/TDSQL-C；注意命名不统一：`InquiryPriceXxx`、`InquirePriceXxx`、`DescribePrice`）
+- 腾讯云大部分产品都有询价接口（已验证并接入 CVM/CBS/CDB/CLB/Redis/PostgreSQL/VPN 网关/MongoDB/MariaDB/TDSQL-C/Lighthouse/ECM/SQL Server/TDSQL MySQL(dcdb)/GAAP，共 16 个产品；注意命名不统一：`InquiryPriceXxx`、`InquirePriceXxx`、`DescribePrice`、`DescribeDCDBPrice`）
+- **未接入 BM/ES/EMR 的理由**：BM（黑石物理机）与 ES（Elasticsearch）没有"创建实例询价"接口，只能按已有实例 ID 询价，对 plan 估算无意义；EMR 需要深层嵌套的多节点 ResourceSpec（Master/Core/Task），Terraform plan 无法干净映射，属高风险。三者暂不纳入。
 - 返回值包含 `UnitPrice` / `UnitPriceDiscount` / `OriginalPrice` / `DiscountPrice`，官方一致
 - 少了"同步价格库"这一层，MVP 交付时间从 6 个月 → 2 周
 

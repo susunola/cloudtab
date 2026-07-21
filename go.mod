@@ -11,10 +11,15 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/dcdb v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ecm v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/gaap v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mariadb v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mongodb v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis v1.0.1000
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sqlserver v1.0.1000
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/vpc v1.0.1000
 	go.etcd.io/bbolt v1.5.0
 	gopkg.in/yaml.v3 v3.0.1

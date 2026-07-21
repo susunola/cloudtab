@@ -81,8 +81,15 @@ Sample output:
 | MongoDB | `tencentcloud_mongodb_instance` | `mongodb:InquirePriceCreateDBInstances` |
 | MariaDB | `tencentcloud_mariadb_instance` | `mariadb:DescribePrice` |
 | TDSQL-C | `tencentcloud_cynosdb_cluster` | `cynosdb:InquirePriceCreate` |
+| Lighthouse | `tencentcloud_lighthouse_instance` | `lighthouse:InquirePriceCreateInstances` |
+| ECM (Edge) | `tencentcloud_ecm_instance` | `ecm:DescribePriceRunInstance` |
+| SQL Server | `tencentcloud_sqlserver_instance` | `sqlserver:InquiryPriceCreateDBInstances` |
+| TDSQL MySQL | `tencentcloud_dcdb_instance` | `dcdb:DescribeDCDBPrice` |
+| GAAP | `tencentcloud_gaap_proxy` | `gaap:InquiryPriceCreateProxy` |
 
 **Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
+
+> **Why not BM / ES / EMR?** These have no *create-instance* pricing API — Bare Metal (`bm`) and Elasticsearch (`es`) can only price an existing instance by ID, and EMR requires a deeply-nested multi-node cluster spec that a Terraform plan doesn't map cleanly. Pricing them from a plan would be guesswork, so they are intentionally out of scope.
 
 ## GitHub Action
 

@@ -19,10 +19,15 @@ import (
 	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 	cynosdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb/v20190107"
+	dcdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/dcdb/v20180411"
+	ecm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ecm/v20190719"
+	gaap "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/gaap/v20180529"
+	lighthouse "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse/v20200324"
 	mariadb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mariadb/v20170312"
 	mongodb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mongodb/v20190725"
 	postgres "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres/v20170312"
 	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
+	sqlserver "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sqlserver/v20180328"
 	vpc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/vpc/v20170312"
 )
 
@@ -203,6 +208,87 @@ var handlers = map[string]productHandler{
 					return nil, err
 				}
 				out, err := client.(*cynosdb.Client).InquirePriceCreate(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"lighthouse": {
+		product: "lighthouse",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return lighthouse.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			// SDK method is "InquirePrice" (no 'y'), like mongodb/cynosdb.
+			"InquirePriceCreateInstances": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := lighthouse.NewInquirePriceCreateInstancesRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*lighthouse.Client).InquirePriceCreateInstances(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"ecm": {
+		product: "ecm",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return ecm.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"DescribePriceRunInstance": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := ecm.NewDescribePriceRunInstanceRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*ecm.Client).DescribePriceRunInstance(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"sqlserver": {
+		product: "sqlserver",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return sqlserver.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"InquiryPriceCreateDBInstances": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := sqlserver.NewInquiryPriceCreateDBInstancesRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*sqlserver.Client).InquiryPriceCreateDBInstances(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"dcdb": {
+		product: "dcdb",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return dcdb.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"DescribeDCDBPrice": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := dcdb.NewDescribeDCDBPriceRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*dcdb.Client).DescribeDCDBPrice(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"gaap": {
+		product: "gaap",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return gaap.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"InquiryPriceCreateProxy": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := gaap.NewInquiryPriceCreateProxyRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*gaap.Client).InquiryPriceCreateProxy(in)
 				return sdkResult(out, err)
 			},
 		},
