@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "cloudtab",
+    "subtitle": "Terraform plan → Tencent Cloud pricing APIs → monthly cost breakdown",
+    "output": "cloudtab-architecture.html"
+  },
+  "components": [
+    { "id": "hcl",       "type": "external", "label": "Terraform HCL",         "sublabel": "*.tf",                              "pos": [40,  120], "size": [170, 60] },
+    { "id": "plan",      "type": "external", "label": "plan.json",             "sublabel": "terraform show -json",              "pos": [40,  210], "size": [170, 60] },
+    { "id": "usage",     "type": "external", "label": "cloudtab-usage.yml",     "sublabel": "usage assumptions",                 "pos": [40,  320], "size": [170, 60] },
+    { "id": "creds",     "type": "security", "label": "TENCENTCLOUD_*",         "sublabel": "AK/SK (read-only)",                 "pos": [40,  430], "size": [170, 60] },
+
+    { "id": "cli",       "type": "backend",  "label": "cmd/cloudtab",           "sublabel": "cobra CLI",                         "pos": [280, 120], "size": [220, 60] },
+    { "id": "parser",    "type": "backend",  "label": "internal/parser",       "sublabel": "plan.json → resources",              "pos": [280, 220], "size": [220, 60] },
+    { "id": "registry",  "type": "backend",  "label": "internal/resources",    "sublabel": "type → Mapper",                      "pos": [280, 320], "size": [220, 60] },
+    { "id": "mappers",   "type": "backend",  "label": "Mappers",                "sublabel": "cvm / cbs / cdb / clb / redis / …",  "pos": [280, 420], "size": [220, 72] },
+
+    { "id": "engine",    "type": "backend",  "label": "internal/pricing",      "sublabel": "engine.go router",                   "pos": [570, 220], "size": [220, 60], "tag": "cache-aware" },
+    { "id": "cache",     "type": "database", "label": "BoltDB cache",           "sublabel": "sha256(req) → resp, 24h TTL",        "pos": [570, 320], "size": [220, 60] },
+    { "id": "output",    "type": "backend",  "label": "internal/output",       "sublabel": "table / json / diff",                "pos": [570, 480], "size": [220, 60] },
+
+    { "id": "cvm_api",   "type": "cloud",    "label": "cvm InquiryPrice…",     "sublabel": "CVM 云服务器",                       "pos": [870, 120], "size": [280, 56] },
+    { "id": "cbs_api",   "type": "cloud",    "label": "cbs InquiryPrice…",     "sublabel": "CBS 云硬盘",                         "pos": [870, 190], "size": [280, 56] },
+    { "id": "cdb_api",   "type": "cloud",    "label": "cdb InquiryPrice…",     "sublabel": "TencentDB MySQL",                    "pos": [870, 260], "size": [280, 56] },
+    { "id": "clb_api",   "type": "cloud",    "label": "clb InquiryPrice…",     "sublabel": "CLB 负载均衡",                       "pos": [870, 330], "size": [280, 56] },
+    { "id": "redis_api", "type": "cloud",    "label": "redis InquiryPrice…",   "sublabel": "TencentDB Redis",                    "pos": [870, 400], "size": [280, 56] },
+    { "id": "static",    "type": "cloud",    "label": "Static tables",         "sublabel": "COS / CDN / SCF (no inquiry API)",    "pos": [870, 470], "size": [280, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Input", "wraps": ["hcl", "plan", "usage", "creds"] },
+    { "kind": "region", "label": "cloudtab core (Go)", "wraps": ["cli", "parser", "registry", "mappers", "engine", "cache", "output"] },
+    { "kind": "region", "label": "Tencent Cloud APIs — read-only", "wraps": ["cvm_api", "cbs_api", "cdb_api", "clb_api", "redis_api", "static"] }
+  ],
+  "connections": [
+    { "from": "hcl",   "to": "plan",                                       "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "from": "plan",  "to": "parser",   "label": "load",                   "fromSide": "right", "toSide": "left" },
+    { "from": "usage", "to": "mappers",  "label": "assumptions",            "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "from": "creds", "to": "engine",   "label": "AK/SK",                  "variant": "security", "fromSide": "right", "toSide": "left", "labelDy": -29 },
+
+    { "from": "cli",      "to": "parser",                                   "fromSide": "bottom", "toSide": "top" },
+    { "from": "parser",   "to": "registry",                                 "fromSide": "bottom", "toSide": "top" },
+    { "from": "registry", "to": "mappers",                                  "fromSide": "bottom", "toSide": "top" },
+    { "from": "mappers",  "to": "engine",   "label": "PriceRequest",       "variant": "emphasis", "fromSide": "right", "toSide": "bottom", "labelDy": -66 },
+    { "from": "engine",   "to": "cache",    "label": "read/write",         "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "from": "engine",   "to": "output",   "label": "CostComponent[]",    "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 30 },
+
+    { "from": "engine", "to": "cvm_api",   "label": "InquiryPrice*",       "fromSide": "right", "toSide": "left" },
+    { "from": "engine", "to": "cbs_api",   "fromSide": "right", "toSide": "left" },
+    { "from": "engine", "to": "cdb_api",   "fromSide": "right", "toSide": "left" },
+    { "from": "engine", "to": "clb_api",   "fromSide": "right", "toSide": "left" },
+    { "from": "engine", "to": "redis_api", "fromSide": "right", "toSide": "left" },
+    { "from": "engine", "to": "static",    "label": "fallback",            "variant": "dashed", "fromSide": "right", "toSide": "left" }
+  ],
+  "cards": [
+    { "dot": "cyan",    "title": "Input",  "items": ["Terraform plan.json is the primary source", "HCL direct-read as future fallback", "usage.yml supplies assumptions for usage-based resources (COS / CDN / SCF)"] },
+    { "dot": "emerald", "title": "Core",   "items": ["Per-resource Mapper: Extract → Parse", "Pricing engine routes by Product/Action", "Local BoltDB cache eliminates duplicate queries (10 QPS limit)"] },
+    { "dot": "rose",    "title": "Pricing","items": ["Direct calls to InquiryPrice* — always in sync with console price", "No self-hosted price DB (unlike Infracost)", "Static tables only for products without an inquiry API"] }
+  ]
+}

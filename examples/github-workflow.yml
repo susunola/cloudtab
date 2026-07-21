@@ -1,0 +1,29 @@
+# Drop this at .github/workflows/cloudtab.yml in your Terraform repo.
+name: cloudtab
+
+on:
+  pull_request:
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".github/workflows/cloudtab.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  estimate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: susunola/cloudtab@v0
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+        with:
+          path: "infra/"
+          region: "ap-guangzhou"
+          base-ref: "${{ github.event.pull_request.base.ref }}"

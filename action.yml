@@ -1,0 +1,97 @@
+name: "cloudtab — Tencent Cloud cost estimation"
+description: "Estimate monthly Tencent Cloud cost from a Terraform plan and comment on the PR."
+author: "cloudtab contributors"
+branding:
+  icon: "trending-up"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Path to Terraform working directory (containing .tf files)."
+    required: false
+    default: "."
+  region:
+    description: "Default Tencent Cloud region (ap-guangzhou / ap-shanghai / ...)."
+    required: false
+    default: "ap-guangzhou"
+  base-ref:
+    description: "Git ref to compare against for diff mode. Empty = breakdown only."
+    required: false
+    default: ""
+  post-comment:
+    description: "Post the result as a PR comment. Requires GITHUB_TOKEN."
+    required: false
+    default: "true"
+  cloudtab-version:
+    description: "cloudtab release to use. 'latest' installs the newest published binary."
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
+    - name: Install cloudtab
+      shell: bash
+      run: |
+        set -euo pipefail
+        VER="${{ inputs.cloudtab-version }}"
+        if [ "$VER" = "latest" ]; then
+          VER=$(curl -sfL https://api.github.com/repos/susunola/cloudtab/releases/latest | \
+                grep -Po '"tag_name":\s*"\K[^"]+')
+        fi
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64
+        URL="https://github.com/susunola/cloudtab/releases/download/${VER}/cloudtab_${OS}_${ARCH}.tar.gz"
+        echo "Downloading $URL"
+        curl -sfL "$URL" | tar -xz -C /usr/local/bin cloudtab
+        cloudtab --help >/dev/null
+
+    - name: Run cloudtab
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        TENCENTCLOUD_SECRET_ID: ${{ env.TENCENTCLOUD_SECRET_ID }}
+        TENCENTCLOUD_SECRET_KEY: ${{ env.TENCENTCLOUD_SECRET_KEY }}
+      run: |
+        set -euo pipefail
+        terraform init -input=false -no-color
+        terraform plan -out=plan.new.tfplan -no-color
+        terraform show -json plan.new.tfplan > plan.new.json
+
+        if [ -n "${{ inputs.base-ref }}" ]; then
+          # Build baseline from base ref in a worktree
+          git fetch origin "${{ inputs.base-ref }}" --depth=1
+          WT=$(mktemp -d)
+          git worktree add "$WT" FETCH_HEAD
+          (
+            cd "$WT/${{ inputs.path }}"
+            terraform init -input=false -no-color
+            terraform plan -out=plan.old.tfplan -no-color || true
+            if [ -f plan.old.tfplan ]; then
+              terraform show -json plan.old.tfplan > "$OLDPWD/plan.old.json"
+            fi
+          )
+          if [ -f plan.old.json ]; then
+            cloudtab diff --before plan.old.json --after plan.new.json \
+              --region "${{ inputs.region }}" --format markdown > comment.md
+          else
+            cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" --format json \
+              | cloudtab-mdfmt > comment.md || cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
+          fi
+        else
+          cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
+        fi
+        echo "comment_file=comment.md" >> "$GITHUB_OUTPUT"
+
+    - name: Post PR comment
+      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: cloudtab
+        path: ${{ inputs.path }}/${{ steps.run.outputs.comment_file }}

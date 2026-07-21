@@ -1,0 +1,44 @@
+# goreleaser config for cross-platform binary releases.
+# Run: goreleaser release --clean
+
+version: 2
+project_name: cloudtab
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cloudtab
+    main: ./cmd/cloudtab
+    binary: cloudtab
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: susunola
+    name: cloudtab
+  draft: false
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

@@ -1,0 +1,10 @@
+/dist/
+/cloudtab
+*.tfplan
+plan*.json
+*.tfstate*
+.terraform/
+.cloudtab/
+coverage.out
+# local helper — do NOT publish
+push.sh

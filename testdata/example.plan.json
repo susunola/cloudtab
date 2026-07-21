@@ -1,0 +1,30 @@
+{
+  "format_version": "1.2",
+  "configuration": {
+    "provider_config": {
+      "tencentcloud": {
+        "expressions": {
+          "region": { "constant_value": "ap-shanghai" }
+        }
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "tencentcloud_instance.web",
+      "type": "tencentcloud_instance",
+      "name": "web",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "instance_type": "S5.MEDIUM4",
+          "image_id": "img-pmqg1cw7",
+          "availability_zone": "ap-shanghai-2",
+          "instance_charge_type": "POSTPAID_BY_HOUR",
+          "system_disk_type": "CLOUD_PREMIUM",
+          "system_disk_size": 50
+        }
+      }
+    }
+  ]
+}
