@@ -22,7 +22,14 @@ import (
 // We normalize charge_type to cdb.PayType:
 // - PREPAID  -> PRE_PAID
 // - POSTPAID -> HOUR_PAID
-// and treat pay-as-you-go as hourly for monthly estimation (x730).
+//
+// Design decision — hourly → monthly conversion:
+// Unlike CVM/CBS/CLB which return InquiryPrice* responses with a ChargeUnit field
+// (handled by monthlyFromPrice), the CDB DescribeDBPrice response does NOT include
+// a ChargeUnit. The Price field is always in 元/小时 for HOUR_PAID and 元/月 for
+// PRE_PAID. Since we cannot use monthlyFromPrice here (no ChargeUnit), we multiply
+// by hoursPerMonth (=730) directly for POSTPAID instances. This is intentional and
+// matches Tencent Cloud console behavior.
 type MySQLInstance struct{}
 
 func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {

@@ -46,10 +46,13 @@ type PriceRequest struct {
 	Params  map[string]interface{}
 }
 
-func (r PriceRequest) CacheKey() string {
-	b, _ := json.Marshal(r)
+func (r PriceRequest) CacheKey() (string, error) {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return "", fmt.Errorf("marshal cache key: %w", err)
+	}
 	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
+	return hex.EncodeToString(h[:]), nil
 }
 
 type Engine struct {
@@ -88,7 +91,11 @@ func (e *Engine) Close() error {
 // The per-type Mapper decodes it into typed CostComponents.
 func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	if e.cache != nil {
-		if hit, ok := e.cache.Get(req.CacheKey()); ok {
+		key, err := req.CacheKey()
+		if err != nil {
+			return nil, err
+		}
+		if hit, ok := e.cache.Get(key); ok {
 			return hit, nil
 		}
 	}
@@ -119,7 +126,12 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		return nil, err
 	}
 	if e.cache != nil {
-		_ = e.cache.Put(req.CacheKey(), resp)
+		key, kerr := req.CacheKey()
+		if kerr != nil {
+			// Cache key failure is non-fatal; just skip caching this response.
+			return resp, nil
+		}
+		_ = e.cache.Put(key, resp)
 	}
 	return resp, nil
 }

@@ -6,6 +6,8 @@
 package resources
 
 import (
+	"sync"
+
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
 	"github.com/susunola/cloudtab/internal/pricing"
@@ -35,15 +37,24 @@ func (r *Registry) Lookup(tfType string) (Mapper, bool) {
 	return m, ok
 }
 
-// DefaultRegistry ships with the initial supported resource types.
+// defaultRegistryOnce guards the singleton initialisation of the built-in
+// registry so that repeated calls to DefaultRegistry return the same *Registry.
+var defaultRegistryOnce sync.Once
+var defaultRegistryInstance *Registry
+
+// DefaultRegistry returns a shared Registry pre-loaded with all supported
+// resource types. It is safe for concurrent use.
 func DefaultRegistry() *Registry {
-	r := &Registry{m: map[string]Mapper{}}
-	r.Register("tencentcloud_instance", &CVMInstance{})
-	r.Register("tencentcloud_cbs_storage", &CBSStorage{})
-	r.Register("tencentcloud_eip", &EIP{})
-	r.Register("tencentcloud_clb_instance", &CLBInstance{})
-	r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
-	r.Register("tencentcloud_redis_instance", &RedisInstance{})
-	// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
-	return r
+	defaultRegistryOnce.Do(func() {
+		r := &Registry{m: map[string]Mapper{}}
+		r.Register("tencentcloud_instance", &CVMInstance{})
+		r.Register("tencentcloud_cbs_storage", &CBSStorage{})
+		r.Register("tencentcloud_eip", &EIP{})
+		r.Register("tencentcloud_clb_instance", &CLBInstance{})
+		r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
+		r.Register("tencentcloud_redis_instance", &RedisInstance{})
+		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
+		defaultRegistryInstance = r
+	})
+	return defaultRegistryInstance
 }

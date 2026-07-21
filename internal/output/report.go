@@ -34,12 +34,20 @@ type Report struct {
 	Skipped   []SkippedResource `json:"skipped"`
 }
 
+// Total returns the sum of MonthlyCost over all cost components.
 func (r Report) Total() float64 {
 	var t float64
 	for _, res := range r.Resources {
-		for _, c := range res.Components {
-			t += c.MonthlyCost
-		}
+		t += ResourceCostTotal(res)
+	}
+	return t
+}
+
+// ResourceCostTotal sums the MonthlyCost of all components in a single resource.
+func ResourceCostTotal(rc ResourceCost) float64 {
+	var t float64
+	for _, c := range rc.Components {
+		t += c.MonthlyCost
 	}
 	return t
 }

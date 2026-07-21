@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,11 +25,21 @@ import (
 
 const maxConcurrency = 8
 
+// Version is set at build time via -ldflags "-X main.Version=...".
+var Version = "(dev)"
+
 func main() {
 	root := &cobra.Command{
 		Use:   "cloudtab",
 		Short: "Tencent Cloud cost estimation from Terraform plans",
 	}
+	root.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print cloudtab version",
+		Run: func(_ *cobra.Command, _ []string) {
+			fmt.Println("cloudtab", Version)
+		},
+	})
 
 	// -- breakdown --
 	var (
@@ -172,7 +183,7 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 				cost, skip, err := priceResource(engine, registry, r)
 				if err != nil {
 					errs <- fmt.Errorf("%s: %w", r.Address, err)
-					return
+					continue
 				}
 				mu.Lock()
 				if cost != nil {
@@ -196,8 +207,12 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 	wg.Wait()
 	close(errs)
 
-	if first, ok := <-errs; ok {
-		return rep, first
+	var pricingErrs []error
+	for e := range errs {
+		pricingErrs = append(pricingErrs, e)
+	}
+	if len(pricingErrs) > 0 {
+		return rep, errors.Join(pricingErrs...)
 	}
 	return rep, nil
 }

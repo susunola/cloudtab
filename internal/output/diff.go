@@ -39,13 +39,6 @@ type DiffReport struct {
 
 // ComputeDiff pairs resources by address and computes monthly delta.
 func ComputeDiff(before, after Report) DiffReport {
-	sumComps := func(rc ResourceCost) float64 {
-		var t float64
-		for _, c := range rc.Components {
-			t += c.MonthlyCost
-		}
-		return t
-	}
 	idx := func(rep Report) map[string]ResourceCost {
 		m := make(map[string]ResourceCost, len(rep.Resources))
 		for _, r := range rep.Resources {
@@ -60,9 +53,9 @@ func ComputeDiff(before, after Report) DiffReport {
 
 	for addr, br := range bm {
 		seen[addr] = true
-		bTotal := sumComps(br)
+		bTotal := ResourceCostTotal(br)
 		if ar, ok := am[addr]; ok {
-			aTotal := sumComps(ar)
+			aTotal := ResourceCostTotal(ar)
 			kind := DiffSame
 			if math.Abs(aTotal-bTotal) > 1e-6 {
 				kind = DiffChange
@@ -82,7 +75,7 @@ func ComputeDiff(before, after Report) DiffReport {
 		if seen[addr] {
 			continue
 		}
-		aTotal := sumComps(ar)
+		aTotal := ResourceCostTotal(ar)
 		out.Resources = append(out.Resources, ResourceDiff{
 			Address: addr, Type: ar.Type, Kind: DiffAdd,
 			BeforeMonthly: 0, AfterMonthly: aTotal, DeltaMonthly: aTotal,
