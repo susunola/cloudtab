@@ -10,7 +10,10 @@ import (
 // with a non-nil client factory. This is the contract the generic dispatch in
 // engine.go depends on.
 func TestHandlersRegistered(t *testing.T) {
-	want := []string{"cbs", "cdb", "clb", "cvm", "postgres", "redis"}
+	want := []string{
+		"cbs", "cdb", "clb", "cvm", "postgres", "redis",
+		"vpc", "mongodb", "mariadb", "cynosdb",
+	}
 	got := SupportedProducts()
 	sort.Strings(got)
 	sort.Strings(want)

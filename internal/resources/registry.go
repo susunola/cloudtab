@@ -54,6 +54,10 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
 		r.Register("tencentcloud_postgresql_instance", &PostgreSQLInstance{})
 		r.Register("tencentcloud_redis_instance", &RedisInstance{})
+		r.Register("tencentcloud_vpn_gateway", &VPNGateway{})
+		r.Register("tencentcloud_mongodb_instance", &MongoDBInstance{})
+		r.Register("tencentcloud_mariadb_instance", &MariaDBInstance{})
+		r.Register("tencentcloud_cynosdb_cluster", &CynosDBCluster{})
 		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
 		defaultRegistryInstance = r
 	})

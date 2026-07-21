@@ -220,6 +220,353 @@ func TestRedisExtractAndParseFullPipeline(t *testing.T) {
 	}
 }
 
+// ----- VPN Gateway integration test -----
+
+func TestVPNGatewayExtractAndParse(t *testing.T) {
+	m := VPNGateway{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_vpn_gateway.gw",
+		Type:    "tencentcloud_vpn_gateway",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"bandwidth":   10,
+			"charge_type": "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("VPN Extract: %v", err)
+	}
+	if req.Product != "vpc" || req.Action != "InquiryPriceCreateVpnGateway" {
+		t.Fatalf("VPN product/action = %q/%q", req.Product, req.Action)
+	}
+
+	// Response.Price.InstancePrice is in 元; UnitPrice is 元/h for POSTPAID.
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPrice":0.5,"ChargeUnit":"HOUR"}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("VPN Parse: %v", err)
+	}
+	if len(comps) == 0 {
+		t.Fatal("VPN returned 0 components")
+	}
+	// POSTPAID hourly 0.5元 → monthly 0.5*730.
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("VPN hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("VPN monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
+	}
+}
+
+func TestVPNGatewayPrepaidWithBandwidth(t *testing.T) {
+	m := VPNGateway{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_vpn_gateway",
+		Region: "ap-shanghai",
+		After: map[string]interface{}{
+			"bandwidth":      20,
+			"charge_type":    "PREPAID",
+			"prepaid_period": 1,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("VPN Extract: %v", err)
+	}
+	if _, ok := req.Params["InstanceChargePrepaid"]; !ok {
+		t.Error("PREPAID VPN should carry InstanceChargePrepaid")
+	}
+	// PREPAID monthly total + a separate bandwidth line.
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"DiscountPrice":100,"ChargeUnit":"MONTH"},"BandwidthPrice":{"UnitPrice":0.2,"ChargeUnit":"HOUR"}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("VPN Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("VPN components = %d, want 2 (instance+bandwidth)", len(comps))
+	}
+	if comps[0].MonthlyCost != 100 {
+		t.Errorf("VPN instance monthly = %v, want 100", comps[0].MonthlyCost)
+	}
+}
+
+// ----- MongoDB integration test -----
+
+func TestMongoDBExtractAndParse(t *testing.T) {
+	m := MongoDBInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_mongodb_instance.mongo",
+		Type:    "tencentcloud_mongodb_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"memory":         4,
+			"volume":         100,
+			"charge_type":    "PREPAID",
+			"prepaid_period": 1,
+			"node_num":       3,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Mongo Extract: %v", err)
+	}
+	if req.Product != "mongodb" || req.Action != "InquirePriceCreateDBInstances" {
+		t.Fatalf("Mongo product/action = %q/%q", req.Product, req.Action)
+	}
+
+	// PREPAID: DiscountPrice is a period (monthly) total in 元.
+	raw := []byte(`{"Response":{"Price":{"UnitPrice":0,"OriginalPrice":300,"DiscountPrice":250}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Mongo Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("Mongo components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 250 {
+		t.Errorf("Mongo monthly = %v, want 250", comps[0].MonthlyCost)
+	}
+	if comps[0].HourlyCost != 0 {
+		t.Errorf("Mongo PREPAID hourly = %v, want 0", comps[0].HourlyCost)
+	}
+}
+
+func TestMongoDBPostpaidHourly(t *testing.T) {
+	m := MongoDBInstance{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_mongodb_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"memory":         4,
+			"volume":         100,
+			"charge_type":    "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Mongo Extract: %v", err)
+	}
+	// POSTPAID: UnitPrice is 元/h.
+	raw := []byte(`{"Response":{"Price":{"UnitPrice":1.2,"DiscountPrice":1.2}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Mongo Parse: %v", err)
+	}
+	if comps[0].HourlyCost != 1.2 {
+		t.Errorf("Mongo hourly = %v, want 1.2", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 1.2*hoursPerMonth {
+		t.Errorf("Mongo monthly = %v, want %v", comps[0].MonthlyCost, 1.2*hoursPerMonth)
+	}
+}
+
+// ----- MariaDB integration test -----
+
+func TestMariaDBExtractAndParse(t *testing.T) {
+	m := MariaDBInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_mariadb_instance.maria",
+		Type:    "tencentcloud_mariadb_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"zones":                []interface{}{"ap-guangzhou-3", "ap-guangzhou-4"},
+			"memory":               8,
+			"storage":              200,
+			"node_count":           2,
+			"instance_charge_type": "PREPAID",
+			"period":               1,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Maria Extract: %v", err)
+	}
+	if req.Product != "mariadb" || req.Action != "DescribePrice" {
+		t.Fatalf("Maria product/action = %q/%q", req.Product, req.Action)
+	}
+	if req.Params["Zone"] != "ap-guangzhou-3" {
+		t.Errorf("Maria Zone = %v, want first of zones list", req.Params["Zone"])
+	}
+
+	// PREPAID DescribePrice returns 分 (period total); 15000分 = 150元.
+	raw := []byte(`{"Response":{"Price":15000,"OriginalPrice":20000}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Maria Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("Maria components = %d, want 1", len(comps))
+	}
+	if comps[0].MonthlyCost != 150 {
+		t.Errorf("Maria monthly = %v, want 150", comps[0].MonthlyCost)
+	}
+}
+
+func TestMariaDBPostpaidHourly(t *testing.T) {
+	m := MariaDBInstance{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_mariadb_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3",
+			"memory":            8,
+			"storage":           200,
+			"charge_type":       "POSTPAID",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Maria Extract: %v", err)
+	}
+	// POSTPAID: 50分/h = 0.5元/h.
+	raw := []byte(`{"Response":{"Price":50}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Maria Parse: %v", err)
+	}
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("Maria hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("Maria monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
+	}
+}
+
+// ----- TDSQL-C (cynosdb) integration test -----
+
+func TestCynosDBExtractAndParse(t *testing.T) {
+	m := CynosDBCluster{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_cynosdb_cluster.tdsqlc",
+		Type:    "tencentcloud_cynosdb_cluster",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"cpu":            2,
+			"memory":         4,
+			"storage_limit":  100,
+			"charge_type":    "PREPAID",
+			"prepaid_period": 1,
+			"instance_count": 1,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Cynos Extract: %v", err)
+	}
+	if req.Product != "cynosdb" || req.Action != "InquirePriceCreate" {
+		t.Fatalf("Cynos product/action = %q/%q", req.Product, req.Action)
+	}
+
+	// PREPAID: TotalPriceDiscount is 分. instance 20000分=200元 + storage 5000分=50元.
+	raw := []byte(`{"Response":{"InstancePrice":{"TotalPrice":25000,"TotalPriceDiscount":20000},"StoragePrice":{"TotalPrice":6000,"TotalPriceDiscount":5000}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Cynos Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("Cynos components = %d, want 2 (compute+storage)", len(comps))
+	}
+	if comps[0].MonthlyCost != 200 {
+		t.Errorf("Cynos compute monthly = %v, want 200", comps[0].MonthlyCost)
+	}
+	if comps[1].MonthlyCost != 50 {
+		t.Errorf("Cynos storage monthly = %v, want 50", comps[1].MonthlyCost)
+	}
+}
+
+func TestCynosDBPostpaidHourly(t *testing.T) {
+	m := CynosDBCluster{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_cynosdb_cluster",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"cpu":            2,
+			"memory":         4,
+			"charge_type":    "POSTPAID",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Cynos Extract: %v", err)
+	}
+	// POSTPAID: UnitPriceDiscount is 分/h. 100分/h = 1元/h.
+	raw := []byte(`{"Response":{"InstancePrice":{"UnitPrice":120,"UnitPriceDiscount":100}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Cynos Parse: %v", err)
+	}
+	if len(comps) < 1 {
+		t.Fatal("Cynos returned 0 components")
+	}
+	if comps[0].HourlyCost != 1.0 {
+		t.Errorf("Cynos hourly = %v, want 1.0", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 1.0*hoursPerMonth {
+		t.Errorf("Cynos monthly = %v, want %v", comps[0].MonthlyCost, 1.0*hoursPerMonth)
+	}
+}
+
+// TestPrepaidPricesSingleMonth guards against the period-total inflation bug:
+// even when the user configures a multi-month prepaid term, the pricing request
+// must ask for a single month so the returned price equals the monthly cost.
+func TestPrepaidPricesSingleMonth(t *testing.T) {
+	// MongoDB: Period must be forced to 1 regardless of prepaid_period.
+	mongoReq, err := (MongoDBInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_mongodb_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "memory": 4, "volume": 100,
+			"charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("mongo extract: %v", err)
+	}
+	if got := mongoReq.Params["Period"]; got != 1 {
+		t.Errorf("mongo Period = %v, want 1 (multi-month must not leak)", got)
+	}
+
+	// MariaDB: Period must be forced to 1.
+	mariaReq, err := (MariaDBInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_mariadb_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
+			"charge_type": "PREPAID", "period": 36,
+		},
+	})
+	if err != nil {
+		t.Fatalf("maria extract: %v", err)
+	}
+	if got := mariaReq.Params["Period"]; got != 1 {
+		t.Errorf("maria Period = %v, want 1", got)
+	}
+
+	// CynosDB: TimeSpan must be forced to 1 month for PREPAID.
+	cynosReq, err := (CynosDBCluster{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_cynosdb_cluster",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"charge_type": "PREPAID", "prepaid_period": 24,
+		},
+	})
+	if err != nil {
+		t.Fatalf("cynos extract: %v", err)
+	}
+	if got := cynosReq.Params["TimeSpan"]; got != 1 {
+		t.Errorf("cynos TimeSpan = %v, want 1", got)
+	}
+	if got := cynosReq.Params["TimeUnit"]; got != "m" {
+		t.Errorf("cynos TimeUnit = %v, want m", got)
+	}
+}
+
 // ----- EIP StaticMapper test -----
 
 func TestEIPEstimate(t *testing.T) {
@@ -254,7 +601,12 @@ func TestDefaultRegistryHasAllTypes(t *testing.T) {
 		"tencentcloud_eip",
 		"tencentcloud_clb_instance",
 		"tencentcloud_mysql_instance",
+		"tencentcloud_postgresql_instance",
 		"tencentcloud_redis_instance",
+		"tencentcloud_vpn_gateway",
+		"tencentcloud_mongodb_instance",
+		"tencentcloud_mariadb_instance",
+		"tencentcloud_cynosdb_cluster",
 	}
 	for _, tfType := range types {
 		if _, ok := reg.Lookup(tfType); !ok {
@@ -385,6 +737,44 @@ func TestAllMappersImplementContract(t *testing.T) {
 				"spec_code":            "cdb.pg.z1.2g",
 				"storage":              150,
 				"instance_charge_type": "POSTPAID_BY_HOUR",
+			},
+		},
+		{
+			addr: "tencentcloud_vpn_gateway.gw",
+			typ:  "tencentcloud_vpn_gateway",
+			after: map[string]interface{}{
+				"bandwidth":   10,
+				"charge_type": "POSTPAID_BY_HOUR",
+			},
+		},
+		{
+			addr: "tencentcloud_mongodb_instance.mongo",
+			typ:  "tencentcloud_mongodb_instance",
+			after: map[string]interface{}{
+				"available_zone": "ap-guangzhou-3",
+				"memory":         4,
+				"volume":         100,
+				"charge_type":    "POSTPAID_BY_HOUR",
+			},
+		},
+		{
+			addr: "tencentcloud_mariadb_instance.maria",
+			typ:  "tencentcloud_mariadb_instance",
+			after: map[string]interface{}{
+				"availability_zone": "ap-guangzhou-3",
+				"memory":            8,
+				"storage":           200,
+				"charge_type":       "POSTPAID",
+			},
+		},
+		{
+			addr: "tencentcloud_cynosdb_cluster.tdsqlc",
+			typ:  "tencentcloud_cynosdb_cluster",
+			after: map[string]interface{}{
+				"available_zone": "ap-guangzhou-3",
+				"cpu":            2,
+				"memory":         4,
+				"charge_type":    "POSTPAID",
 			},
 		},
 	}

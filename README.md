@@ -77,6 +77,10 @@ Sample output:
 | MySQL | `tencentcloud_mysql_instance` | `cdb:DescribeDBPrice` |
 | PostgreSQL | `tencentcloud_postgresql_instance` | `postgres:InquiryPriceCreateDBInstances` |
 | Redis | `tencentcloud_redis_instance` | `redis:InquiryPriceCreateInstance` |
+| VPN Gateway | `tencentcloud_vpn_gateway` | `vpc:InquiryPriceCreateVpnGateway` |
+| MongoDB | `tencentcloud_mongodb_instance` | `mongodb:InquirePriceCreateDBInstances` |
+| MariaDB | `tencentcloud_mariadb_instance` | `mariadb:DescribePrice` |
+| TDSQL-C | `tencentcloud_cynosdb_cluster` | `cynosdb:InquirePriceCreate` |
 
 **Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 

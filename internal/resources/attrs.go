@@ -54,3 +54,30 @@ func getBool(m map[string]interface{}, k string) bool {
 	}
 	return false
 }
+
+// firstZone returns the first availability zone from a "zones" list attribute
+// (e.g. tencentcloud_mariadb_instance takes a []string). It tolerates both a
+// []interface{} (typical JSON plan decoding) and a plain string, returning ""
+// when no zone can be found.
+func firstZone(m map[string]interface{}) string {
+	if m == nil {
+		return ""
+	}
+	switch v := m["zones"].(type) {
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				return s
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if s != "" {
+				return s
+			}
+		}
+	case string:
+		return v
+	}
+	return ""
+}

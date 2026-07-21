@@ -18,8 +18,12 @@ import (
 	cdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb/v20170320"
 	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
+	cynosdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb/v20190107"
+	mariadb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mariadb/v20170312"
+	mongodb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mongodb/v20190725"
 	postgres "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/postgres/v20170312"
 	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
+	vpc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/vpc/v20170312"
 )
 
 // clientFactory builds a typed SDK client for a product in a given region.
@@ -132,6 +136,73 @@ var handlers = map[string]productHandler{
 					return nil, err
 				}
 				out, err := client.(*redis.Client).InquiryPriceCreateInstance(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"vpc": {
+		product: "vpc",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return vpc.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"InquiryPriceCreateVpnGateway": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := vpc.NewInquiryPriceCreateVpnGatewayRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*vpc.Client).InquiryPriceCreateVpnGateway(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"mongodb": {
+		product: "mongodb",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return mongodb.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			// Note: the SDK method is spelled "InquirePrice" (no 'y'), a known
+			// naming quirk of the mongodb SDK. The action key mirrors it exactly.
+			"InquirePriceCreateDBInstances": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := mongodb.NewInquirePriceCreateDBInstancesRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*mongodb.Client).InquirePriceCreateDBInstances(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"mariadb": {
+		product: "mariadb",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return mariadb.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"DescribePrice": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := mariadb.NewDescribePriceRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*mariadb.Client).DescribePrice(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"cynosdb": {
+		product: "cynosdb",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return cynosdb.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			// SDK method is "InquirePriceCreate" (no 'y'); mirrored exactly.
+			"InquirePriceCreate": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := cynosdb.NewInquirePriceCreateRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*cynosdb.Client).InquirePriceCreate(in)
 				return sdkResult(out, err)
 			},
 		},
