@@ -67,6 +67,19 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_cloudhsm_instance", &CloudHSMInstance{})
 		r.Register("tencentcloud_domain_registration", &DomainRegistration{})
 		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
+
+		// --- AWS (priced via the AWS Price List backend) ---
+		r.Register("aws_instance", &AWSInstance{})
+		r.Register("aws_ebs_volume", &AWSEBSVolume{})
+		r.Register("aws_db_instance", &AWSDBInstance{})
+		r.Register("aws_elasticache_cluster", &AWSElastiCacheCluster{})
+		r.Register("aws_lb", &AWSLB{})
+		r.Register("aws_elb", &AWSELB{})
+		// NOTE: aws_s3_bucket and aws_eip are intentionally NOT registered.
+		// Their cost is purely usage-driven (S3: GB stored / requests / egress;
+		// EIP: only billed when idle/unattached or as a public-IPv4 hourly
+		// charge). A Terraform plan carries none of those usage figures, so any
+		// monthly number would be fabricated. See docs/design.md.
 		defaultRegistryInstance = r
 	})
 	return defaultRegistryInstance

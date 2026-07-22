@@ -5,7 +5,16 @@
 //	cloudtab breakdown --path plan.json --region ap-guangzhou
 //	cloudtab diff --before plan.old.json --after plan.new.json [--format markdown]
 //
-// Auth: reads TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY from env.
+// Auth (Tencent Cloud): reads TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY
+// from env.
+//
+// Auth (AWS): the AWS Price List backend uses the standard AWS credential chain
+// (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN, shared config
+// files, IAM role, ...). It is only consulted when the plan contains aws_*
+// resources, so a pure-Tencent run needs no AWS credentials.
+//
+// A single plan may mix tencentcloud_* and aws_* resources; each resource is
+// routed to the matching pricing backend by its provider prefix.
 //
 // Site: Tencent Cloud has two independent sites (Chinese-mainland and
 // International) with separate account systems. The site is chosen by the
@@ -157,6 +166,14 @@ func newEngine(region, site string, noCache bool, cacheDir string) (*pricing.Eng
 		Site:      resolveSite(site),
 		CachePath: cachePathForFlags(noCache, cacheDir),
 		NoCache:   noCache,
+
+		// AWS credentials for the optional AWS Price List backend. These are
+		// read from the standard AWS environment variables and are only used
+		// when the plan contains aws_* resources; a pure-Tencent run ignores
+		// them entirely (the AWS backend is created lazily on first use).
+		AWSAccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSSessionToken:    os.Getenv("AWS_SESSION_TOKEN"),
 	})
 }
 

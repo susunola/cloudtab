@@ -162,3 +162,56 @@ M1-M4 大约 6 周就有可用产品，比 Infracost 早期路径快得多，因
 - 国内站 `RootDomain=""` 走 SDK 默认（= `tencentcloudapi.com`），**默认行为与历史完全一致**（向后兼容）。
 - **缓存按 site 隔离**：cache key 用规范化 root domain 做前缀命名空间，避免国内价被当成国际价（或反之）返回——两站价格/币种可能不同。
 - CLI：`--site` flag（优先）> `TENCENTCLOUD_SITE` 环境变量 > 默认国内站。
+
+## 八、多云支持 / AWS 接入（已实现）
+
+cloudtab 从「只支持腾讯云」演进为「多云询价框架」，首个新增云厂商是 **AWS**。核心原则：**抽象出 provider 后端，AWS 与腾讯云各是一个实现；腾讯云既有行为 100% 不变，依赖零漂移。**
+
+### 8.1 Provider 抽象
+
+- `internal/pricing` 里定义了一个最小的 `backend` 接口：`query(PriceRequest) ([]byte, error)`。
+- **腾讯云不走 backend**——它的逻辑仍直接挂在 `*Engine` 上（handlers registry + invoke + SDK client 缓存），保持既有结构与向后兼容。
+- **AWS 是一个被委托的 backend**（`aws_backend.go` 的 `awsBackend`）。
+- `PriceRequest` 增加 `Provider` 字段，`provider()` 方法在为空时**默认返回 `tencentcloud`**——所有历史调用（不带 provider）行为完全不变。
+- `Engine.dispatch(req)` 按 `req.provider()` 路由：
+  - `tencentcloud`（或空）→ 走 handlers / invoke（原路径）；
+  - `aws` → 走 `awsBackend().query(req)`；
+  - 其他 → 明确报错（不静默）。
+- **懒加载 AWS 后端**：`Engine` 用 `sync.Once` 在**首次 AWS 请求**时才解析 AWS SDK / 凭证。纯腾讯云的 plan 不需要任何 AWS 凭证，也不会初始化 AWS SDK。
+
+### 8.2 AWS Price List API 模型
+
+- AWS 只有**一个** `GetProducts` 操作，靠 `ServiceCode`（如 `AmazonEC2`）+ 一组 `TERM_MATCH` 过滤器参数化。
+- **询价 endpoint 恒为 `us-east-1`**；被询价的区域用 `location` 过滤器表达，且值是**人类可读区域名**（如 `US East (N. Virginia)`），不是 region code。`aws_common.go` 的 `awsRegionToLocation` 维护 region→location 映射（~21 区），未命中回落默认区。
+- 返回 `PriceList []string`，每个元素是一份完整的产品 JSON 文档：
+  `{"product":{"attributes":{...}}, "terms":{"OnDemand":{"<term>":{"priceDimensions":{"<rate>":{"unit":"Hrs","pricePerUnit":{"USD":"..."}}}}}}}`。
+- `aws_backend.go` 负责分页（尊重 `MaxResults`，默认/上限 100）并把所有页拼成 JSON 数组返回；`aws_common.go` 的 `parseAWSPriceList` / `firstOnDemandUSD` 负责取第一个非零 OnDemand 单价。
+
+### 8.3 已接入的 AWS 产品（6 个 mapper）
+
+| Terraform 资源 | ServiceCode | 关键过滤器 | 计费口径 |
+|---|---|---|---|
+| `aws_instance` | AmazonEC2 | instanceType / location / tenancy / OS=Linux / preInstalledSw=NA / capacitystatus=Used | 时费 × 730 |
+| `aws_ebs_volume` | AmazonEC2 | volumeApiName（gp2/gp3/io1…）/ location / productFamily=Storage | GB-月单价 × size |
+| `aws_db_instance` | AmazonRDS | instanceType(db.*) / databaseEngine / deploymentOption(Single/Multi-AZ) / location | 时费 × 730 |
+| `aws_elasticache_cluster` | AmazonElastiCache | instanceType(cache.*) / cacheEngine(Redis/Memcached) / location | 时费 × 节点数 × 730 |
+| `aws_lb` | AWSELB | productFamily(Application/Network/Gateway LB) / location / usagetype 含 `LoadBalancerUsage` | 固定时费 × 730 |
+| `aws_elb` | AWSELB | productFamily=Load Balancer（Classic）/ location / usagetype 含 `LoadBalancerUsage` | 固定时费 × 730 |
+
+- **引擎名翻译**：Terraform 里是小写 id（`mysql`/`postgres`/`aurora-mysql`…），Price List 里是显示名（`MySQL`/`PostgreSQL`/`Aurora MySQL`…）。`awsRDSEngine` / `awsCacheEngine` 显式映射，**不支持的引擎直接报错**，绝不用错 SKU 静默询价。
+- **ELB 多 SKU 消歧**：AWSELB 家族一个产品会返回多个 SKU（`LoadBalancerUsage` 固定时费 + `LCUUsage` + `DataProcessing-Bytes`）。新增 `parseAWSPriceListMatching(raw, "LoadBalancerUsage")` 只锁定固定时费那条；**LCU / 数据处理是用量驱动，明确排除并在组件名里标注**（`... (base, excl. LCU/data)`）。
+
+### 8.4 刻意不接入的 AWS 产品（按设计排除）
+
+- **`aws_s3_bucket`（S3）与 `aws_eip`（EIP）不注册。** 它们的成本**纯用量驱动**：S3 取决于实际存储 GB / 请求数 / 出网流量；EIP 取决于是否绑定、绑定时长。**一份 Terraform plan 里根本没有这些运行时数据**，任何月度数字都是编造。因此选择「documented exclusion」而非塞一个假的 mapper（`registry.go` 有注释说明，README 也有 "Not priced from a plan (by design)" 说明）。
+
+### 8.5 币种处理（USD vs CNY）
+
+- 腾讯云返回 **CNY**，AWS 返回 **USD**。输出表按组件带 **Currency 列**。
+- **TOTAL 只在币种统一时求和**；混合 provider（同一 plan 里既有腾讯云又有 AWS）时不做跨币种汇总，避免把 ¥ 和 $ 直接相加的错误。
+
+### 8.6 依赖隔离（零漂移铁律的延续）
+
+- 新增 `aws-sdk-go-v2 v1.43.0` / `config` / `service/pricing v1.44.0` / `credentials`（+ smithy-go 等 transitive），全部**只增不改**。
+- `go mod tidy` 后：4 个直接用到的 AWS 包从 `// indirect` 提升为直接 require（additive），**19 个腾讯云依赖全部仍在 v1.0.1000，零漂移**（`grep tencentcloud go.mod | grep -v v1.0.1000` 为空验证）。
+- CLI：`--aws-access-key-id` / `--aws-secret-access-key` / `--aws-session-token`（或对应环境变量）；纯腾讯云 plan 无需提供。

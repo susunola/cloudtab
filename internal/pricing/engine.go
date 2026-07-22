@@ -49,6 +49,16 @@ type Config struct {
 	// Any other non-empty value is treated as a literal root domain override
 	// (e.g. a private-cloud gateway), passed through to the SDK unchanged.
 	Site string
+
+	// AWS credentials for the AWS Price List backend. These are OPTIONAL and
+	// entirely separate from the Tencent SecretID/SecretKey above. When left
+	// empty, the AWS SDK's default credential chain is used (environment vars
+	// AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN, shared
+	// config files, IAM role, ...). They are only consulted when an AWS
+	// resource is actually priced, so a pure-Tencent run needs none of them.
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSSessionToken    string
 }
 
 // rootDomainForSite maps a Site selector to the SDK RootDomain suffix.
@@ -72,24 +82,44 @@ func rootDomainForSite(site string) string {
 
 // PriceRequest is the neutral request submitted by a Mapper.
 //
-//	Product: "cvm" | "cbs" | "clb" | "cdb" | "redis" | "postgres" |
-//	         "vpc" | "mongodb" | "mariadb" | "cynosdb" | "lighthouse" |
-//	         "ecm" | "sqlserver" | "dcdb" | "gaap" | ...
-//	Action:  "InquiryPriceRunInstances" | "InquiryPriceCreateDisks" |
-//	         "DescribeDBPrice" | "InquiryPriceCreateInstance" |
-//	         "InquiryPriceCreateVpnGateway" | "InquirePriceCreateDBInstances" |
-//	         "DescribePrice" | "InquirePriceCreate" |
-//	         "InquirePriceCreateInstances" | "DescribePriceRunInstance" |
-//	         "InquiryPriceCreateDBInstances" | "DescribeDCDBPrice" |
-//	         "InquiryPriceCreateProxy" | ...
-//	Region:  ap-guangzhou / ap-shanghai / ...
-//	Params:  action-specific input, will be JSON-marshaled into the SDK request
+//	Provider: "" | "tencentcloud" (default) | "aws". Selects the pricing
+//	          backend. Empty is treated as "tencentcloud" for backward
+//	          compatibility, so all pre-existing mappers keep working unchanged.
+//	Product:  Tencent: "cvm" | "cbs" | "clb" | "cdb" | "redis" | ...
+//	          AWS: the Price List ServiceCode, e.g. "AmazonEC2" | "AmazonRDS" |
+//	          "AmazonElastiCache" | "AWSELB" | "AmazonS3".
+//	Action:   Tencent: "InquiryPriceRunInstances" | "DescribeDBPrice" | ...
+//	          AWS: unused (the AWS backend prices via Filters in Params); may be
+//	          left empty or set to a descriptive label.
+//	Region:   Tencent: ap-guangzhou / ap-shanghai / ...
+//	          AWS: us-east-1 / eu-west-1 / ... (used only to build a Location
+//	          filter; the Pricing API endpoint itself is always us-east-1).
+//	Params:   action-specific input. Tencent: JSON-marshaled into the SDK
+//	          request. AWS: a neutral map the AWS backend turns into GetProducts
+//	          filters (see aws_backend.go).
 type PriceRequest struct {
-	Product string
-	Action  string
-	Region  string
-	Params  map[string]interface{}
+	Provider string
+	Product  string
+	Action   string
+	Region   string
+	Params   map[string]interface{}
 }
+
+// provider returns the request's provider, defaulting to Tencent Cloud when
+// unset so that every mapper written before multi-cloud support keeps routing
+// to the Tencent backend without changes.
+func (r PriceRequest) provider() string {
+	p := strings.ToLower(strings.TrimSpace(r.Provider))
+	if p == "" {
+		return providerTencent
+	}
+	return p
+}
+
+const (
+	providerTencent = "tencentcloud"
+	providerAWS     = "aws"
+)
 
 func (r PriceRequest) CacheKey() (string, error) {
 	b, err := json.Marshal(r)
@@ -100,11 +130,28 @@ func (r PriceRequest) CacheKey() (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 
+// backend is a provider-specific pricing source. The Tencent path is
+// implemented directly on *Engine (client/invoke/handlers) for historical
+// reasons and to keep its extensive test surface stable; additional providers
+// (e.g. AWS) plug in as a backend the Engine delegates to from Query.
+type backend interface {
+	// query prices a single request and returns the raw provider response
+	// bytes, which the caller's Mapper decodes into CostComponents.
+	query(req PriceRequest) ([]byte, error)
+}
+
 type Engine struct {
 	cfg     Config
 	cache   *cache // optional BoltDB
 	mu      sync.Mutex
 	clients map[string]interface{} // product:region -> typed SDK client
+
+	// aws is the lazily-initialised AWS pricing backend. It is created on the
+	// first AWS request (so a pure-Tencent run never touches the AWS SDK or
+	// requires AWS credentials). Guarded by awsOnce.
+	awsOnce sync.Once
+	aws     backend
+	awsErr  error
 }
 
 func NewEngine(cfg Config) (*Engine, error) {
@@ -147,16 +194,7 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		}
 	}
 
-	region := req.Region
-	if region == "" {
-		region = e.cfg.Region
-	}
-
-	h, ok := handlers[req.Product]
-	if !ok {
-		return nil, fmt.Errorf("unsupported product %q (register a productHandler in handlers.go)", req.Product)
-	}
-	resp, err := e.invoke(h, region, req)
+	resp, err := e.dispatch(req)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +203,42 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 		_ = e.cache.Put(key, resp)
 	}
 	return resp, nil
+}
+
+// dispatch routes a request to the provider-specific backend. Tencent Cloud is
+// served by the Engine's own client/invoke/handlers path (unchanged); AWS is
+// delegated to the lazily-created AWS backend.
+func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
+	switch req.provider() {
+	case providerTencent:
+		region := req.Region
+		if region == "" {
+			region = e.cfg.Region
+		}
+		h, ok := handlers[req.Product]
+		if !ok {
+			return nil, fmt.Errorf("unsupported product %q (register a productHandler in handlers.go)", req.Product)
+		}
+		return e.invoke(h, region, req)
+	case providerAWS:
+		b, err := e.awsBackend()
+		if err != nil {
+			return nil, err
+		}
+		return b.query(req)
+	default:
+		return nil, fmt.Errorf("unsupported provider %q", req.provider())
+	}
+}
+
+// awsBackend lazily constructs the AWS pricing backend once and reuses it. The
+// AWS SDK and its credential resolution are only touched when an AWS resource
+// is actually priced, so pure-Tencent runs are unaffected.
+func (e *Engine) awsBackend() (backend, error) {
+	e.awsOnce.Do(func() {
+		e.aws, e.awsErr = newAWSBackend(e.cfg)
+	})
+	return e.aws, e.awsErr
 }
 
 // cacheKey derives the on-disk cache key for a request under the engine's

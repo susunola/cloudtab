@@ -54,19 +54,30 @@ func LoadPlanJSON(path string) (*Plan, error) {
 		return nil, fmt.Errorf("invalid plan json: %w", err)
 	}
 
-	defaultRegion := ""
-	if pc, ok := doc.Configuration.ProviderConfig["tencentcloud"]; ok {
-		if r, ok := pc.Expressions["region"]; ok {
-			defaultRegion = r.ConstantValue
+	// Each Terraform provider declares its own default region in its provider
+	// block. We read them per provider so the correct default is applied by
+	// resource type: tencentcloud_* resources default to the tencentcloud
+	// provider's region, aws_* resources to the aws provider's region.
+	providerRegion := func(name string) string {
+		if pc, ok := doc.Configuration.ProviderConfig[name]; ok {
+			if r, ok := pc.Expressions["region"]; ok {
+				return r.ConstantValue
+			}
 		}
+		return ""
 	}
+	tencentRegion := providerRegion("tencentcloud")
+	awsRegion := providerRegion("aws")
 
 	p := &Plan{FormatVersion: doc.FormatVersion}
 	for _, rc := range doc.ResourceChanges {
 		if !contributesToCost(rc.Change.Actions) {
 			continue
 		}
-		region := defaultRegion
+		// Pick the provider-block default by resource type, then let an explicit
+		// per-resource "region" attribute (Tencent resources carry one; AWS
+		// resources generally do not) override it.
+		region := defaultRegionForType(rc.Type, tencentRegion, awsRegion)
 		if v, ok := rc.Change.After["region"].(string); ok && v != "" {
 			region = v
 		}
@@ -79,6 +90,27 @@ func LoadPlanJSON(path string) (*Plan, error) {
 		})
 	}
 	return p, nil
+}
+
+// defaultRegionForType returns the provider-block default region appropriate
+// for a resource type. AWS resource types are prefixed "aws_"; everything else
+// is treated as Tencent Cloud (the historical default), preserving prior
+// behaviour for every tencentcloud_* type.
+func defaultRegionForType(tfType, tencentRegion, awsRegion string) string {
+	if ProviderForType(tfType) == "aws" {
+		return awsRegion
+	}
+	return tencentRegion
+}
+
+// ProviderForType maps a Terraform resource type to the pricing provider that
+// serves it, based on the type's provider prefix. It returns "aws" for aws_*
+// types and "tencentcloud" for everything else (the historical default).
+func ProviderForType(tfType string) string {
+	if len(tfType) >= 4 && tfType[:4] == "aws_" {
+		return "aws"
+	}
+	return "tencentcloud"
 }
 
 func contributesToCost(actions []string) bool {

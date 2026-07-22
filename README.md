@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Currently supports <b>Tencent Cloud</b>. AWS / Alibaba Cloud / Huawei Cloud on the roadmap.</i>
+  <i>Currently supports <b>Tencent Cloud</b> and <b>AWS</b>. Alibaba Cloud / Huawei Cloud on the roadmap.</i>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-`cloudtab` reads a Terraform plan and tells you what it will cost — **before** you `apply`. Same UX as Infracost, but focused on the clouds Infracost doesn't cover (Tencent today; AWS / Alibaba / Huawei next).
+`cloudtab` reads a Terraform plan and tells you what it will cost — **before** you `apply`. Same UX as Infracost, but focused on the clouds Infracost doesn't cover (Tencent Cloud + AWS today; Alibaba / Huawei next). A single plan may mix Tencent and AWS resources — each is routed to its own pricing backend by the resource's provider prefix.
 
 - 🔌 **Zero setup** — one binary, provider credentials as env vars, one command
 - 💰 **Real prices, not guesses** — calls each cloud's official inquiry APIs; no hand-maintained price tables
@@ -47,11 +47,21 @@ go install github.com/susunola/cloudtab/cmd/cloudtab@latest
 export TENCENTCLOUD_SECRET_ID=AKIDxxxx
 export TENCENTCLOUD_SECRET_KEY=xxxxxxxx
 
+# 2b. (optional) AWS credentials — only needed if the plan has aws_* resources.
+#     Uses the standard AWS credential chain; the pricing:GetProducts action is
+#     the only permission required (attach AWSPriceListServiceFullAccess or an
+#     equivalent read-only policy).
+export AWS_ACCESS_KEY_ID=AKIAxxxx
+export AWS_SECRET_ACCESS_KEY=xxxxxxxx
+
 # 3. generate a plan and estimate cost
 terraform plan -out=tf.plan
 terraform show -json tf.plan > plan.json
 cloudtab breakdown --path plan.json --region ap-guangzhou
 ```
+
+> A pure-Tencent plan needs **no** AWS credentials — the AWS SDK is only
+> initialised the first time an `aws_*` resource is priced.
 
 ### Chinese-mainland vs International site
 
@@ -89,6 +99,8 @@ Sample output:
 
 ## Supported resources
 
+### Tencent Cloud
+
 | Product | Terraform type | Pricing API |
 |---|---|---|
 | CVM | `tencentcloud_instance` | `cvm:InquiryPriceRunInstances` |
@@ -111,7 +123,31 @@ Sample output:
 | CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` |
 | Domain | `tencentcloud_domain_registration` | `domain:DescribeDomainPriceList` |
 
-**Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
+### AWS
+
+Priced live via the **AWS Price List (Pricing) API** (`pricing:GetProducts`). The
+Pricing API endpoint is always `us-east-1`; the region being priced is expressed
+through a `location` filter, so any commercial AWS region is supported.
+
+| Product | Terraform type | Priced component |
+|---|---|---|
+| EC2 | `aws_instance` | On-demand instance hour (Linux, shared tenancy) × 730 |
+| EBS | `aws_ebs_volume` | Per-GB-month storage rate × provisioned size |
+| RDS | `aws_db_instance` | On-demand DB instance hour (per engine + Single/Multi-AZ) × 730 |
+| ElastiCache | `aws_elasticache_cluster` | On-demand node hour × node count × 730 |
+| ELB (ALB/NLB/GWLB) | `aws_lb` | Fixed load-balancer hour (base, **excl.** LCU/data-processing) × 730 |
+| ELB (Classic) | `aws_elb` | Fixed load-balancer hour (base, **excl.** data-processing) × 730 |
+
+AWS prices are quoted in **USD**; a mixed-provider plan shows a per-component
+`Currency` column and only sums a grand total when the currency is uniform.
+
+> **Not priced from a plan (by design):** `aws_s3_bucket` and `aws_eip` are
+> purely usage-driven — S3 cost depends on GB stored / requests / egress, and an
+> EIP is only billed while idle/unattached or as a public-IPv4 hourly charge. A
+> Terraform plan carries none of those figures, so any monthly number would be
+> fabricated. They are intentionally left unregistered rather than reported as $0.
+
+**Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables), more AWS services. See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 > **Why not BM / ES / EMR?** These have no *create-instance* pricing API — Bare Metal (`bm`) and Elasticsearch (`es`) can only price an existing instance by ID, and EMR requires a deeply-nested multi-node cluster spec that a Terraform plan doesn't map cleanly. Pricing them from a plan would be guesswork, so they are intentionally out of scope.
 
