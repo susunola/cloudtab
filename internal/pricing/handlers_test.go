@@ -14,6 +14,7 @@ func TestHandlersRegistered(t *testing.T) {
 		"cbs", "cdb", "clb", "cvm", "postgres", "redis",
 		"vpc", "mongodb", "mariadb", "cynosdb",
 		"lighthouse", "ecm", "sqlserver", "dcdb", "gaap",
+		"yunjing", "cloudhsm", "domain",
 	}
 	got := SupportedProducts()
 	sort.Strings(got)

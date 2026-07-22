@@ -107,6 +107,9 @@ Sample output:
 | SQL Server | `tencentcloud_sqlserver_instance` | `sqlserver:InquiryPriceCreateDBInstances` |
 | TDSQL MySQL | `tencentcloud_dcdb_instance` | `dcdb:DescribeDCDBPrice` |
 | GAAP | `tencentcloud_gaap_proxy` | `gaap:InquiryPriceCreateProxy` |
+| CWP (Host Security) | `tencentcloud_cwp_license_order` | `yunjing:InquiryPriceOpenProVersionPrepaid` |
+| CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` |
+| Domain | `tencentcloud_domain_registration` | `domain:DescribeDomainPriceList` |
 
 **Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables). See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 

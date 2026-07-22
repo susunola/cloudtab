@@ -63,6 +63,9 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_sqlserver_instance", &SQLServerInstance{})
 		r.Register("tencentcloud_dcdb_instance", &DCDBInstance{})
 		r.Register("tencentcloud_gaap_proxy", &GAAPProxy{})
+		r.Register("tencentcloud_cwp_license_order", &YunjingLicense{})
+		r.Register("tencentcloud_cloudhsm_instance", &CloudHSMInstance{})
+		r.Register("tencentcloud_domain_registration", &DomainRegistration{})
 		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
 		defaultRegistryInstance = r
 	})

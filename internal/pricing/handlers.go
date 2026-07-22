@@ -17,9 +17,11 @@ import (
 	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
 	cdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb/v20170320"
 	clb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/clb/v20180317"
+	cloudhsm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cloudhsm/v20191112"
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 	cynosdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb/v20190107"
 	dcdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/dcdb/v20180411"
+	domain "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/domain/v20180808"
 	ecm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ecm/v20190719"
 	gaap "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/gaap/v20180529"
 	lighthouse "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse/v20200324"
@@ -29,6 +31,7 @@ import (
 	redis "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis/v20180412"
 	sqlserver "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sqlserver/v20180328"
 	vpc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/vpc/v20170312"
+	yunjing "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/yunjing/v20180228"
 )
 
 // clientFactory builds a typed SDK client for a product in a given region.
@@ -289,6 +292,54 @@ var handlers = map[string]productHandler{
 					return nil, err
 				}
 				out, err := client.(*gaap.Client).InquiryPriceCreateProxy(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"yunjing": {
+		product: "yunjing",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return yunjing.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"InquiryPriceOpenProVersionPrepaid": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := yunjing.NewInquiryPriceOpenProVersionPrepaidRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*yunjing.Client).InquiryPriceOpenProVersionPrepaid(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"cloudhsm": {
+		product: "cloudhsm",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return cloudhsm.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"InquiryPriceBuyVsm": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := cloudhsm.NewInquiryPriceBuyVsmRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*cloudhsm.Client).InquiryPriceBuyVsm(in)
+				return sdkResult(out, err)
+			},
+		},
+	},
+	"domain": {
+		product: "domain",
+		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
+			return domain.NewClient(cred, region, prof)
+		},
+		actions: map[string]actionInvoker{
+			"DescribeDomainPriceList": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				in := domain.NewDescribeDomainPriceListRequest()
+				if err := bindParams(params, in); err != nil {
+					return nil, err
+				}
+				out, err := client.(*domain.Client).DescribeDomainPriceList(in)
 				return sdkResult(out, err)
 			},
 		},
