@@ -1,0 +1,132 @@
+{
+  "format_version": "1.2",
+  "configuration": {
+    "provider_config": {
+      "alicloud": {
+        "expressions": {
+          "region": {"constant_value": "cn-hangzhou"}
+        }
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "alicloud_instance.web",
+      "type": "alicloud_instance",
+      "name": "web",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "instance_type": "ecs.g7.large",
+          "image_id": "ubuntu_20_04_x64_20G_alibase_20220118.vhd",
+          "system_disk_category": "cloud_essd",
+          "system_disk_size": 40,
+          "instance_count": 1,
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_disk.data",
+      "type": "alicloud_disk",
+      "name": "data",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "category": "cloud_essd",
+          "size": 100,
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_eip.nat",
+      "type": "alicloud_eip",
+      "name": "nat",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "bandwidth": 10,
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_slb_load_balancer.app",
+      "type": "alicloud_slb_load_balancer",
+      "name": "app",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "specification": "slb.s2.small",
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_db_instance.main",
+      "type": "alicloud_db_instance",
+      "name": "main",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "engine": "MySQL",
+          "instance_type": "mysql.n4.large.1",
+          "instance_storage": 50,
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_kvstore_instance.cache",
+      "type": "alicloud_kvstore_instance",
+      "name": "cache",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "instance_class": "redis.master.small.default",
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_mongodb_instance.docdb",
+      "type": "alicloud_mongodb_instance",
+      "name": "docdb",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "db_instance_class": "dds.mongo.mid",
+          "db_instance_storage": 30,
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_nat_gateway.egress",
+      "type": "alicloud_nat_gateway",
+      "name": "egress",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "specification": "Small",
+          "vswitch_id": "vsw-abc123",
+          "region": "cn-hangzhou"
+        }
+      }
+    },
+    {
+      "address": "alicloud_vpn_gateway.site",
+      "type": "alicloud_vpn_gateway",
+      "name": "site",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "bandwidth": 20,
+          "vpn_type": "Normal",
+          "region": "cn-hangzhou"
+        }
+      }
+    }
+  ]
+}

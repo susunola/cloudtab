@@ -68,6 +68,28 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_domain_registration", &DomainRegistration{})
 		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
 
+		// --- Huawei Cloud (priced via BSS ListOnDemandResourceRatings) ---
+		r.Register("huaweicloud_compute_instance", &HuaweiECS{})
+		r.Register("huaweicloud_evs_volume", &HuaweiEVS{})
+		r.Register("huaweicloud_vpc_eip", &HuaweiEIP{})
+		r.Register("huaweicloud_elb_loadbalancer", &HuaweiELB{})
+		r.Register("huaweicloud_nat_gateway", &HuaweiNAT{})
+		r.Register("huaweicloud_rds_instance", &HuaweiRDS{})
+		r.Register("huaweicloud_dcs_instance", &HuaweiDCS{})
+		r.Register("huaweicloud_dds_instance", &HuaweiDDS{})
+		r.Register("huaweicloud_cce_cluster", &HuaweiCCE{})
+
+		// --- Alibaba Cloud (priced via BSS DescribePrice) ---
+		r.Register("alicloud_instance", &AlibabaECS{})
+		r.Register("alicloud_disk", &AlibabaDisk{})
+		r.Register("alicloud_eip", &AlibabaEIP{})
+		r.Register("alicloud_slb_load_balancer", &AlibabaSLB{})
+		r.Register("alicloud_db_instance", &AlibabaRDS{})
+		r.Register("alicloud_kvstore_instance", &AlibabaRedis{})
+		r.Register("alicloud_mongodb_instance", &AlibabaMongoDB{})
+		r.Register("alicloud_nat_gateway", &AlibabaNAT{})
+		r.Register("alicloud_vpn_gateway", &AlibabaVPN{})
+
 		// --- AWS (priced via the AWS Price List backend) ---
 		r.Register("aws_instance", &AWSInstance{})
 		r.Register("aws_ebs_volume", &AWSEBSVolume{})

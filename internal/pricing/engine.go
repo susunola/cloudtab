@@ -61,6 +61,20 @@ type Config struct {
 	AWSSecretAccessKey string
 	AWSSessionToken    string
 
+	// Alibaba Cloud credentials for the BSS pricing backend. These are OPTIONAL
+	// and only consulted when an Alibaba Cloud resource is priced. When left
+	// empty, the environment vars ALIBABA_ACCESS_KEY_ID / ALIBABA_ACCESS_KEY_SECRET
+	// are used.
+	AlibabaAccessKeyID     string
+	AlibabaAccessKeySecret string
+
+	// Huawei Cloud credentials for the BSS pricing backend. These are OPTIONAL
+	// and only consulted when a Huawei Cloud resource is priced. When left
+	// empty, the environment vars HUAWEI_ACCESS_KEY_ID / HUAWEI_SECRET_ACCESS_KEY
+	// are used.
+	HuaweiAccessKeyID     string
+	HuaweiSecretAccessKey string
+
 	// Timeout bounds a single pricing round-trip (per attempt) so a stalled
 	// InquiryPrice call cannot hang the whole cost run. It is applied to both
 	// backends: for Tencent Cloud via the SDK profile's HttpProfile.ReqTimeout
@@ -165,8 +179,10 @@ func (r PriceRequest) provider() string {
 }
 
 const (
-	providerTencent = "tencentcloud"
-	providerAWS     = "aws"
+	providerTencent  = "tencentcloud"
+	providerAWS      = "aws"
+	providerAlibaba  = "alibaba"
+	providerHuawei   = "huawei"
 )
 
 func (r PriceRequest) CacheKey() (string, error) {
@@ -200,6 +216,16 @@ type Engine struct {
 	awsOnce sync.Once
 	aws     backend
 	awsErr  error
+
+	// alibaba is the lazily-initialised Alibaba Cloud BSS pricing backend.
+	alibabaOnce sync.Once
+	alibaba     backend
+	alibabaErr  error
+
+	// huawei is the lazily-initialised Huawei Cloud BSS pricing backend.
+	huaweiOnce sync.Once
+	huawei     backend
+	huaweiErr  error
 
 	// inflight de-duplicates concurrent identical requests within this process:
 	// when several goroutines ask for the same cache key at once (a plan with
@@ -365,6 +391,26 @@ func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
 			return nil, fmt.Errorf("aws %s: %w", req.Product, err)
 		}
 		return resp, nil
+	case providerAlibaba:
+		b, err := e.alibabaBackend()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := b.query(req)
+		if err != nil {
+			return nil, fmt.Errorf("alibaba %s: %w", req.Product, err)
+		}
+		return resp, nil
+	case providerHuawei:
+		b, err := e.huaweiBackend()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := b.query(req)
+		if err != nil {
+			return nil, fmt.Errorf("huawei %s: %w", req.Product, err)
+		}
+		return resp, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", req.provider())
 	}
@@ -425,6 +471,22 @@ func (e *Engine) awsBackend() (backend, error) {
 		e.aws, e.awsErr = newAWSBackend(e.cfg)
 	})
 	return e.aws, e.awsErr
+}
+
+// alibabaBackend lazily constructs the Alibaba Cloud BSS pricing backend.
+func (e *Engine) alibabaBackend() (backend, error) {
+	e.alibabaOnce.Do(func() {
+		e.alibaba, e.alibabaErr = newAlibabaBackend(e.cfg)
+	})
+	return e.alibaba, e.alibabaErr
+}
+
+// huaweiBackend lazily constructs the Huawei Cloud BSS pricing backend.
+func (e *Engine) huaweiBackend() (backend, error) {
+	e.huaweiOnce.Do(func() {
+		e.huawei, e.huaweiErr = newHuaweiBackend(e.cfg)
+	})
+	return e.huawei, e.huaweiErr
 }
 
 // cacheKey derives the on-disk cache key for a request under the engine's

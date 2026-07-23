@@ -68,6 +68,8 @@ func LoadPlanJSON(path string) (*Plan, error) {
 	}
 	tencentRegion := providerRegion("tencentcloud")
 	awsRegion := providerRegion("aws")
+	alibabaRegion := providerRegion("alicloud")
+	huaweiRegion := providerRegion("huaweicloud")
 
 	p := &Plan{FormatVersion: doc.FormatVersion}
 	for _, rc := range doc.ResourceChanges {
@@ -77,7 +79,7 @@ func LoadPlanJSON(path string) (*Plan, error) {
 		// Pick the provider-block default by resource type, then let an explicit
 		// per-resource "region" attribute (Tencent resources carry one; AWS
 		// resources generally do not) override it.
-		region := defaultRegionForType(rc.Type, tencentRegion, awsRegion)
+		region := defaultRegionForType(rc.Type, tencentRegion, awsRegion, alibabaRegion, huaweiRegion)
 		if v, ok := rc.Change.After["region"].(string); ok && v != "" {
 			region = v
 		}
@@ -93,22 +95,31 @@ func LoadPlanJSON(path string) (*Plan, error) {
 }
 
 // defaultRegionForType returns the provider-block default region appropriate
-// for a resource type. AWS resource types are prefixed "aws_"; everything else
-// is treated as Tencent Cloud (the historical default), preserving prior
-// behaviour for every tencentcloud_* type.
-func defaultRegionForType(tfType, tencentRegion, awsRegion string) string {
-	if ProviderForType(tfType) == "aws" {
+// for a resource type.
+func defaultRegionForType(tfType, tencentRegion, awsRegion, alibabaRegion, huaweiRegion string) string {
+	switch ProviderForType(tfType) {
+	case "aws":
 		return awsRegion
+	case "alibaba":
+		return alibabaRegion
+	case "huawei":
+		return huaweiRegion
+	default:
+		return tencentRegion
 	}
-	return tencentRegion
 }
 
 // ProviderForType maps a Terraform resource type to the pricing provider that
-// serves it, based on the type's provider prefix. It returns "aws" for aws_*
-// types and "tencentcloud" for everything else (the historical default).
+// serves it, based on the type's provider prefix.
 func ProviderForType(tfType string) string {
 	if len(tfType) >= 4 && tfType[:4] == "aws_" {
 		return "aws"
+	}
+	if len(tfType) >= 12 && tfType[:12] == "huaweicloud_" {
+		return "huawei"
+	}
+	if len(tfType) >= 9 && tfType[:9] == "alicloud_" {
+		return "alibaba"
 	}
 	return "tencentcloud"
 }

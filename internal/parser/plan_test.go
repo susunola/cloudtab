@@ -104,3 +104,77 @@ func TestLoadPlanJSONActions(t *testing.T) {
 		t.Errorf("region = %q, want ap-guangzhou", p.Resources[0].Region)
 	}
 }
+
+func TestProviderForType(t *testing.T) {
+	cases := []struct {
+		tfType, want string
+	}{
+		{"tencentcloud_instance", "tencentcloud"},
+		{"tencentcloud_cbs_storage", "tencentcloud"},
+		{"aws_instance", "aws"},
+		{"aws_db_instance", "aws"},
+		{"alicloud_instance", "alibaba"},
+		{"alicloud_db_instance", "alibaba"},
+		{"alicloud_kvstore_instance", "alibaba"},
+		{"alicloud_vpn_gateway", "alibaba"},
+		{"huaweicloud_compute_instance", "huawei"},
+		{"huaweicloud_rds_instance", "huawei"},
+		{"huaweicloud_cce_cluster", "huawei"},
+		{"huaweicloud_evs_volume", "huawei"},
+		{"some_unknown_type", "tencentcloud"},
+		{"", "tencentcloud"},
+	}
+	for _, c := range cases {
+		if got := ProviderForType(c.tfType); got != c.want {
+			t.Errorf("ProviderForType(%q) = %q, want %q", c.tfType, got, c.want)
+		}
+	}
+}
+
+func TestLoadAlibabaPlanJSON(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "alibaba_plan.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("fixture not found (%v); skipping", err)
+	}
+	p, err := LoadPlanJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanJSON: %v", err)
+	}
+	if len(p.Resources) != 9 {
+		t.Fatalf("expected 9 alibaba resources, got %d", len(p.Resources))
+	}
+	// Verify provider routing
+	for _, r := range p.Resources {
+		if ProviderForType(r.Type) != "alibaba" {
+			t.Errorf("resource %q type %q should route to alibaba, got %q", r.Address, r.Type, ProviderForType(r.Type))
+		}
+	}
+	// Verify ECS details
+	ecs := p.Resources[0]
+	if ecs.Region != "cn-hangzhou" {
+		t.Errorf("alibaba ECS region = %q, want cn-hangzhou", ecs.Region)
+	}
+}
+
+func TestLoadHuaweiPlanJSON(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "huawei_plan.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("fixture not found (%v); skipping", err)
+	}
+	p, err := LoadPlanJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanJSON: %v", err)
+	}
+	if len(p.Resources) != 9 {
+		t.Fatalf("expected 9 huawei resources, got %d", len(p.Resources))
+	}
+	for _, r := range p.Resources {
+		if ProviderForType(r.Type) != "huawei" {
+			t.Errorf("resource %q type %q should route to huawei, got %q", r.Address, r.Type, ProviderForType(r.Type))
+		}
+	}
+	ecs := p.Resources[0]
+	if ecs.Region != "cn-north-4" {
+		t.Errorf("huawei ECS region = %q, want cn-north-4", ecs.Region)
+	}
+}

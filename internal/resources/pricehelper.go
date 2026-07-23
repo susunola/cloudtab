@@ -124,3 +124,79 @@ func parseTencentPrice(raw []byte) (tencentSimplePrice, error) {
 	}
 	return p, nil
 }
+
+// --- Alibaba Cloud helpers ---
+
+// alibabaPriceInfo is the common BSS GetPayAsYouGoPrice response price shape.
+type alibabaPriceInfo struct {
+	PriceYuan float64 // sum of ModuleDetail[].CostAfterDiscount (or OriginalCost fallback)
+	Currency  string
+}
+
+// parseAlibabaPrice unmarshals a raw Alibaba Cloud BSS GetPayAsYouGoPrice
+// response into a simplified price info struct. It sums CostAfterDiscount
+// across all module details, falling back to OriginalCost. Currency defaults
+// to "CNY".
+func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
+	var resp struct {
+		Data struct {
+			Currency      string `json:"Currency"`
+			ModuleDetails struct {
+				ModuleDetail []struct {
+					CostAfterDiscount float64 `json:"CostAfterDiscount"`
+					OriginalCost      float64 `json:"OriginalCost"`
+				} `json:"ModuleDetail"`
+			} `json:"ModuleDetails"`
+		} `json:"Data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return alibabaPriceInfo{}, err
+	}
+	cur := resp.Data.Currency
+	if cur == "" {
+		cur = "CNY"
+	}
+	var total float64
+	for _, md := range resp.Data.ModuleDetails.ModuleDetail {
+		v := md.CostAfterDiscount
+		if v <= 0 {
+			v = md.OriginalCost
+		}
+		total += v
+	}
+	return alibabaPriceInfo{PriceYuan: total, Currency: cur}, nil
+}
+
+// --- Huawei Cloud helpers ---
+
+// huaweiPriceInfo is the common BSS ListOnDemandResourceRatings response shape.
+type huaweiPriceInfo struct {
+	Amount   float64 // amount in 元 (or USD for international)
+	Currency string
+}
+
+// parseHuaweiPrice unmarshals a raw Huawei Cloud BSS ListOnDemandResourceRatings
+// response. It reads the top-level "amount" field, falling back to
+// "official_website_amount". Currency defaults to "CNY".
+func parseHuaweiPrice(raw []byte) (huaweiPriceInfo, error) {
+	var resp struct {
+		Amount                *float64 `json:"amount"`
+		OfficialWebsiteAmount *float64 `json:"official_website_amount"`
+		Currency              *string  `json:"currency"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return huaweiPriceInfo{}, err
+	}
+	amt := 0.0
+	if resp.Amount != nil {
+		amt = *resp.Amount
+	}
+	if amt <= 0 && resp.OfficialWebsiteAmount != nil {
+		amt = *resp.OfficialWebsiteAmount
+	}
+	cur := "CNY"
+	if resp.Currency != nil && *resp.Currency != "" {
+		cur = *resp.Currency
+	}
+	return huaweiPriceInfo{Amount: amt, Currency: cur}, nil
+}

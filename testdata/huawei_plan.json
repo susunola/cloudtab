@@ -1,0 +1,130 @@
+{
+  "format_version": "1.2",
+  "configuration": {
+    "provider_config": {
+      "huaweicloud": {
+        "expressions": {
+          "region": {"constant_value": "cn-north-4"}
+        }
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "huaweicloud_compute_instance.web",
+      "type": "huaweicloud_compute_instance",
+      "name": "web",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "flavor_id": "s6.large.2",
+          "flavor_name": "s6.large.2",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_evs_volume.data",
+      "type": "huaweicloud_evs_volume",
+      "name": "data",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "volume_type": "SAS",
+          "size": 100,
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_vpc_eip.nat",
+      "type": "huaweicloud_vpc_eip",
+      "name": "nat",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "bandwidth_name": "eip-nat",
+          "charge_mode": "bandwidth",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_elb_loadbalancer.app",
+      "type": "huaweicloud_elb_loadbalancer",
+      "name": "app",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "loadbalancer_provider": "elb",
+          "type": "L7",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_rds_instance.main",
+      "type": "huaweicloud_rds_instance",
+      "name": "main",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "flavor": "rds.mysql.c2.large",
+          "db": [{"type": "MySQL"}],
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_dcs_instance.cache",
+      "type": "huaweicloud_dcs_instance",
+      "name": "cache",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "engine": "Redis",
+          "flavor": "redis.single.xu1.large.1",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_dds_instance.docdb",
+      "type": "huaweicloud_dds_instance",
+      "name": "docdb",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "mode": "Sharding",
+          "flavor": "dds.mongodb.s6.large.2.shard",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_nat_gateway.egress",
+      "type": "huaweicloud_nat_gateway",
+      "name": "egress",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "spec": "1",
+          "region": "cn-north-4"
+        }
+      }
+    },
+    {
+      "address": "huaweicloud_cce_cluster.main",
+      "type": "huaweicloud_cce_cluster",
+      "name": "main",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "cluster_type": "VirtualMachine",
+          "cluster_version": "v1.27",
+          "region": "cn-north-4"
+        }
+      }
+    }
+  ]
+}
