@@ -137,15 +137,29 @@ through a `location` filter, so any commercial AWS region is supported.
 | ElastiCache | `aws_elasticache_cluster` | On-demand node hour × node count × 730 |
 | ELB (ALB/NLB/GWLB) | `aws_lb` | Fixed load-balancer hour (base, **excl.** LCU/data-processing) × 730 |
 | ELB (Classic) | `aws_elb` | Fixed load-balancer hour (base, **excl.** data-processing) × 730 |
+| Aurora | `aws_rds_cluster_instance` | On-demand Aurora instance hour (per engine, Single-AZ) × 730 |
+| Redshift | `aws_redshift_cluster` | On-demand node hour × node count × 730 (**excl.** RA3 managed storage) |
+| OpenSearch / ES | `aws_opensearch_domain`, `aws_elasticsearch_domain` | On-demand data-node hour × instance count × 730 |
+| DocumentDB | `aws_docdb_cluster_instance` | On-demand instance hour × 730 |
+| Neptune | `aws_neptune_cluster_instance` | On-demand instance hour × 730 |
+| MemoryDB | `aws_memorydb_cluster` | On-demand node hour × (shards × (1 + replicas/shard)) × 730 |
+| Amazon MQ | `aws_mq_broker` | On-demand broker hour (per engine + Single/Multi-AZ) × 730 |
+| MSK | `aws_msk_cluster` | On-demand broker hour × broker count × 730 |
+| DynamoDB (provisioned) | `aws_dynamodb_table` | Provisioned RCU-hour + WCU-hour × 730 (PAY_PER_REQUEST skipped) |
+| EKS | `aws_eks_cluster` | Control-plane hour (per cluster) × 730 |
+| NAT gateway | `aws_nat_gateway` | Fixed hourly rate (base, **excl.** data-processing) × 730 |
 
 AWS prices are quoted in **USD**; a mixed-provider plan shows a per-component
 `Currency` column and only sums a grand total when the currency is uniform.
 
-> **Not priced from a plan (by design):** `aws_s3_bucket` and `aws_eip` are
-> purely usage-driven — S3 cost depends on GB stored / requests / egress, and an
-> EIP is only billed while idle/unattached or as a public-IPv4 hourly charge. A
-> Terraform plan carries none of those figures, so any monthly number would be
-> fabricated. They are intentionally left unregistered rather than reported as $0.
+> **Not priced from a plan (by design):** `aws_s3_bucket`, `aws_eip` and
+> `aws_efs_file_system` are purely usage-driven — S3/EFS cost depends on GB
+> stored / requests / egress, and an EIP is only billed while idle/unattached or
+> as a public-IPv4 hourly charge. A Terraform plan carries none of those figures,
+> so any monthly number would be fabricated. They are intentionally left
+> unregistered rather than reported as $0. DynamoDB is priced only in
+> `PROVISIONED` mode (RCU/WCU are in the plan); `PAY_PER_REQUEST` tables are
+> skipped for the same reason.
 
 **Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables), more AWS services. See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 

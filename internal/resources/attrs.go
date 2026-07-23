@@ -55,6 +55,28 @@ func getBool(m map[string]interface{}, k string) bool {
 	return false
 }
 
+// getNestedMap returns a nested object attribute as a map[string]interface{}.
+// Terraform commonly encodes single-nested blocks as either a map (object) or a
+// one-element list of maps (block syntax). This tolerates both, returning nil
+// when the key is absent or not an object. Used for blocks like an OpenSearch
+// domain's cluster_config.
+func getNestedMap(m map[string]interface{}, k string) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	switch v := m[k].(type) {
+	case map[string]interface{}:
+		return v
+	case []interface{}:
+		for _, item := range v {
+			if nested, ok := item.(map[string]interface{}); ok {
+				return nested
+			}
+		}
+	}
+	return nil
+}
+
 // firstZone returns the first availability zone from a "zones" list attribute
 // (e.g. tencentcloud_mariadb_instance takes a []string). It tolerates both a
 // []interface{} (typical JSON plan decoding) and a plain string, returning ""

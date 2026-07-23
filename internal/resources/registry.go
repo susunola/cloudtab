@@ -75,11 +75,27 @@ func DefaultRegistry() *Registry {
 		r.Register("aws_elasticache_cluster", &AWSElastiCacheCluster{})
 		r.Register("aws_lb", &AWSLB{})
 		r.Register("aws_elb", &AWSELB{})
-		// NOTE: aws_s3_bucket and aws_eip are intentionally NOT registered.
-		// Their cost is purely usage-driven (S3: GB stored / requests / egress;
-		// EIP: only billed when idle/unattached or as a public-IPv4 hourly
-		// charge). A Terraform plan carries none of those usage figures, so any
-		// monthly number would be fabricated. See docs/design.md.
+		// Databases / analytics (instance & node priced, hourly x 730):
+		r.Register("aws_rds_cluster_instance", &AWSRDSClusterInstance{})
+		r.Register("aws_redshift_cluster", &AWSRedshiftCluster{})
+		r.Register("aws_opensearch_domain", &AWSOpenSearchDomain{})
+		r.Register("aws_elasticsearch_domain", &AWSOpenSearchDomain{})
+		r.Register("aws_docdb_cluster_instance", &AWSDocDBInstance{})
+		r.Register("aws_neptune_cluster_instance", &AWSNeptuneInstance{})
+		r.Register("aws_memorydb_cluster", &AWSMemoryDBCluster{})
+		r.Register("aws_mq_broker", &AWSMQBroker{})
+		r.Register("aws_msk_cluster", &AWSMSKCluster{})
+		r.Register("aws_dynamodb_table", &AWSDynamoDBTable{}) // PROVISIONED mode only
+		// Fixed-hourly-fee resources (usage portion excluded and labelled):
+		r.Register("aws_eks_cluster", &AWSEKSCluster{})
+		r.Register("aws_nat_gateway", &AWSNATGateway{})
+		// NOTE: aws_s3_bucket, aws_eip and aws_efs_file_system are intentionally
+		// NOT registered. Their cost is purely usage-driven (S3: GB stored /
+		// requests / egress; EIP: idle/unattached or public-IPv4 hourly; EFS:
+		// GB stored — the file system size is not in the plan). A Terraform plan
+		// carries none of those usage figures, so any monthly number would be
+		// fabricated. aws_dynamodb_table in PAY_PER_REQUEST mode is skipped for
+		// the same reason (handled inside its mapper). See docs/design.md.
 		defaultRegistryInstance = r
 	})
 	return defaultRegistryInstance
