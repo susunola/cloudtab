@@ -24,4 +24,4 @@
 - **Currency**: Tencent = CNY, AWS = USD; TOTAL only summed when all same currency
 - **10/10 `-race` must pass** before any commit
 - **Auto commit + push** after each update per standing convention
-- **Version**: current `v0.2.0`
+- **Version**: current `v0.2.1`
