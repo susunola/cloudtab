@@ -13,10 +13,6 @@ import (
 type AlibabaRDS struct{}
 
 func (AlibabaRDS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	engine := strings.TrimSpace(getStr(r.After, "engine"))
-	if engine == "" {
-		engine = "MySQL"
-	}
 	class := strings.TrimSpace(getStr(r.After, "instance_type"))
 	if class == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("alicloud_db_instance requires instance_type")
@@ -33,7 +29,8 @@ func (AlibabaRDS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
-				alibabaModule("DBInstanceClass", "Hour", fmt.Sprintf("%s:%s:%d", strings.ToLower(engine), class, storage)),
+				alibabaModule("DBInstanceClass", "Hour", "DBInstanceClass:"+class),
+				alibabaModule("DBInstanceStorage", "Hour", fmt.Sprintf("DBInstanceStorage:%d", storage)),
 			},
 		},
 	}, nil

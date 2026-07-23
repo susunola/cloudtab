@@ -10,8 +10,9 @@ import (
 
 // AlibabaNAT handles `alicloud_nat_gateway`.
 //
-// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "natgateway".
-// ModuleList: Specification.
+// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "nat_gw"
+// (NOT "natgateway"). ModuleList: Spec (Small/Middle/Large/Xlarge.1), quoted
+// per DAY, so the monthly figure uses daysPerMonth (30).
 type AlibabaNAT struct{}
 
 func (AlibabaNAT) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
@@ -20,18 +21,17 @@ func (AlibabaNAT) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		spec = "Small"
 	}
 
-	// Extracted for reference; not used in the price request.
-	_ = strings.TrimSpace(getStr(r.After, "vswitch_id"))
+	moduleList := []map[string]string{
+		alibabaModule("Spec", "Day", "Spec:"+spec),
+	}
 
 	return pricing.PriceRequest{
 		Provider: "alibaba",
-		Product:  "natgateway",
+		Product:  "nat_gw",
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"ModuleList": []map[string]string{
-				alibabaModule("Specification", "Hour", spec),
-			},
+			"ModuleList":       moduleList,
 		},
 	}, nil
 }
@@ -43,9 +43,9 @@ func (AlibabaNAT) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompon
 	}
 	return []output.CostComponent{{
 		Name:        "Alibaba NAT Gateway",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
+		Unit:        "DAY",
+		HourlyCost:  info.PriceYuan / daysPerMonth,
+		MonthlyCost: info.PriceYuan * daysPerMonth,
 		Currency:    info.Currency,
 	}}, nil
 }

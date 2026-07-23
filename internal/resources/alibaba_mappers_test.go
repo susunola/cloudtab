@@ -77,11 +77,11 @@ func TestAlibabaEIPParse(t *testing.T) {
 	if c.Name != "Alibaba EIP" {
 		t.Errorf("Name = %q, want Alibaba EIP", c.Name)
 	}
-	if !almostEqualAlibaba(c.HourlyCost, 0.96) {
-		t.Errorf("HourlyCost = %v, want 0.96", c.HourlyCost)
+	if !almostEqualAlibaba(c.HourlyCost, 0.96/daysPerMonth) {
+		t.Errorf("HourlyCost = %v, want %v (0.96/day ÷ daysPerMonth)", c.HourlyCost, 0.96/daysPerMonth)
 	}
-	if !almostEqualAlibaba(c.MonthlyCost, 0.96*hoursPerMonth) {
-		t.Errorf("MonthlyCost = %v, want %v", c.MonthlyCost, 0.96*hoursPerMonth)
+	if !almostEqualAlibaba(c.MonthlyCost, 0.96*daysPerMonth) {
+		t.Errorf("MonthlyCost = %v, want %v (0.96/day × daysPerMonth)", c.MonthlyCost, 0.96*daysPerMonth)
 	}
 	if c.Currency != "CNY" {
 		t.Errorf("Currency = %q, want CNY", c.Currency)
@@ -197,11 +197,11 @@ func TestAlibabaNATParse(t *testing.T) {
 	if c.Name != "Alibaba NAT Gateway" {
 		t.Errorf("Name = %q, want Alibaba NAT Gateway", c.Name)
 	}
-	if !almostEqualAlibaba(c.HourlyCost, 0.96) {
-		t.Errorf("HourlyCost = %v, want 0.96", c.HourlyCost)
+	if !almostEqualAlibaba(c.HourlyCost, 0.96/daysPerMonth) {
+		t.Errorf("HourlyCost = %v, want %v (0.96/day ÷ daysPerMonth)", c.HourlyCost, 0.96/daysPerMonth)
 	}
-	if !almostEqualAlibaba(c.MonthlyCost, 0.96*hoursPerMonth) {
-		t.Errorf("MonthlyCost = %v, want %v", c.MonthlyCost, 0.96*hoursPerMonth)
+	if !almostEqualAlibaba(c.MonthlyCost, 0.96*daysPerMonth) {
+		t.Errorf("MonthlyCost = %v, want %v (0.96/day × daysPerMonth)", c.MonthlyCost, 0.96*daysPerMonth)
 	}
 	if c.Currency != "CNY" {
 		t.Errorf("Currency = %q, want CNY", c.Currency)

@@ -205,24 +205,36 @@ func parseHuaweiPrice(raw []byte) (huaweiPriceInfo, error) {
 
 // huaweiProductInfo builds a single DemandProductInfo payload map for the
 // Huawei Cloud BSS ListOnDemandResourceRatings API. It centralizes the stable
-// scalar fields (id, usage_factor=Duration, usage_value, usage_measure_id,
-// subscription_num) so individual mappers only pass semantic values. This
-// removes the hand-written string keys that previously produced the
+// scalar fields so individual mappers only pass semantic values. This removes
+// the hand-written string keys that previously produced the
 // usage_factor="1"/"size" and project_id=region bugs (code review #1/#2).
 //
-// For linear products billed per-unit (e.g. EVS disks per-GB) pass resourceSize
-// > 0 together with sizeMeasureID (17 = GB); they are omitted otherwise. The
-// project_id is injected by the backend, never by a mapper.
+// usage_factor defaults to "Duration" and usage_measure_id to 4 (hour) — the
+// documented pair for "inquire the hourly price" (see Huawei BSS docs:
+// usageValue=1, usageMeasureID=4). The EIP-by-traffic case overrides these via
+// huaweiProductInfoEx (usage_factor="upflow", usage_measure_id=10 for GB).
+//
+// For linear products billed per-unit (e.g. EVS disks per-GB, bandwidth per-Mbps)
+// pass resourceSize > 0 together with sizeMeasureID (17 = GB for EVS, 15 = Mbps
+// for bandwidth); they are omitted otherwise. The project_id is injected by the
+// backend, never by a mapper.
 func huaweiProductInfo(cloudServiceType, resourceType, resourceSpec, region string, resourceSize int, sizeMeasureID int32) map[string]interface{} {
+	return huaweiProductInfoEx(cloudServiceType, resourceType, resourceSpec, region, resourceSize, sizeMeasureID, "Duration", 4)
+}
+
+// huaweiProductInfoEx is the fully-parameterized variant, used when the
+// usage_factor / usage_measure_id differ from the default Duration/hour pair
+// (e.g. EIP billed by traffic → usage_factor="upflow", usage_measure_id=10).
+func huaweiProductInfoEx(cloudServiceType, resourceType, resourceSpec, region string, resourceSize int, sizeMeasureID int32, usageFactor string, usageMeasureID int32) map[string]interface{} {
 	pi := map[string]interface{}{
 		"id":                 "1",
 		"cloud_service_type": cloudServiceType,
 		"resource_type":      resourceType,
 		"resource_spec":      resourceSpec,
 		"region":             region,
-		"usage_factor":       "Duration",
+		"usage_factor":       usageFactor,
 		"usage_value":        1,
-		"usage_measure_id":   1,
+		"usage_measure_id":   usageMeasureID,
 		"subscription_num":   1,
 	}
 	if resourceSize > 0 {

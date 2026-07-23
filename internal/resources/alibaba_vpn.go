@@ -35,7 +35,7 @@ func (AlibabaVPN) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
-				alibabaModule("Bandwidth", "Hour", fmt.Sprintf("%d:Mbps", bandwidth)),
+				alibabaModule("Bandwidth", "Hour", fmt.Sprintf("Bandwidth:%d", bandwidth)),
 			},
 		},
 	}, nil

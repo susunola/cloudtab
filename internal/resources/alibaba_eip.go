@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
@@ -9,22 +10,39 @@ import (
 )
 
 // AlibabaEIP handles `alicloud_eip` (elastic IP).
+//
+// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "eip".
+// ModuleList: Bandwidth (Kbps, per-DAY), InternetChargeType (0 = by-bandwidth,
+// 1 = by-traffic), ISP (BGP). EIP bandwidth is quoted per day, so the monthly
+// figure uses daysPerMonth (30), not hoursPerMonth.
 type AlibabaEIP struct{}
 
 func (AlibabaEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	bandwidth := getInt(r.After, "bandwidth")
-	if bandwidth <= 0 {
-		bandwidth = 1
+	// Terraform bandwidth is in Mbps; the BSS API expects Kbps (1024..204800).
+	bwKbps := getInt(r.After, "bandwidth") * 1024
+	if bwKbps <= 0 {
+		bwKbps = 5 * 1024
 	}
+
+	// 0 = pay-by-bandwidth, 1 = pay-by-traffic.
+	chargeType := 0
+	if strings.EqualFold(strings.TrimSpace(getStr(r.After, "internet_charge_type")), "PayByTraffic") {
+		chargeType = 1
+	}
+
+	moduleList := []map[string]string{
+		alibabaModule("Bandwidth", "Day", fmt.Sprintf("Bandwidth:%d", bwKbps)),
+		alibabaModule("InternetChargeType", "Usage", fmt.Sprintf("InternetChargeType:%d", chargeType)),
+		alibabaModule("ISP", "Hour", "ISP:BGP"),
+	}
+
 	return pricing.PriceRequest{
 		Provider: "alibaba",
 		Product:  "eip",
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"ModuleList": []map[string]string{
-				alibabaModule("Bandwidth", "Hour", fmt.Sprintf("%d:Mbps", bandwidth)),
-			},
+			"ModuleList":       moduleList,
 		},
 	}, nil
 }
@@ -36,9 +54,9 @@ func (AlibabaEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompon
 	}
 	return []output.CostComponent{{
 		Name:        "Alibaba EIP",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
+		Unit:        "DAY",
+		HourlyCost:  info.PriceYuan / daysPerMonth,
+		MonthlyCost: info.PriceYuan * daysPerMonth,
 		Currency:    info.Currency,
 	}}, nil
 }

@@ -87,6 +87,31 @@ All 45 mappers (Tencent 19 / AWS 8 / Alibaba 9 / Huawei 9) pass `go vet` and `go
 
 > Note: per-resource `usage_factor` values, `size_measure_id=17` (GB), and EIP/ELB `upflow` still warrant a live-API sanity check.
 EOF
+elif [[ "$VERSION" == "v0.3.2" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.2 — Validation item resolved (Huawei/Alibaba request params)
+
+This release closes the last open validation item from the 2026-07-23 code
+review: real-API reconciliation of Huawei/Alibaba pricing request parameters
+against the official BSS docs. 9 concrete mapper corrections that would have
+produced empty/obviously-wrong prices:
+
+### Huawei Cloud (`ListOnDemandResourceRatings`)
+- `usage_measure_id` corrected from `1` → **`4` (hour)** for `Duration`; `upflow` uses **`10` (GB)**.
+- **EIP** now modeled as two billable parts: the public IP (`hws.resource.type.ip`) and the linear bandwidth (`hws.resource.type.bandwidth`, `size_measure_id 15` = Mbps). By-traffic → `upflow`/`10`, by-bandwidth → `Duration`/`4`.
+- EVS disk carries `resource_size` + `size_measure_id 17` (GB).
+
+### Alibaba Cloud (`GetPayAsYouGoPrice`)
+- Correct product codes: **disk → `yundisk`**, **NAT → `nat_gw`** (was `disk`/`natgateway`).
+- `Config` strings now use the documented `PropertyCode:Value` format (e.g. `DataDisk.Size:100,DataDisk.Category:cloud_essd`, `InstanceType:ecs.x,ImageOs:linux`, `Bandwidth:5120`, `InternetChargeType:1`, `ISP:BGP`).
+- **EIP and NAT are per-DAY priced** → monthly run-rate uses `daysPerMonth` (~30.42), not `hoursPerMonth`.
+
+### Tests
+- All 45 mappers pass `go vet` and `go test -race` (10/10).
+- Request-body snapshot tests lock the exact payloads; EIP/NAT parse tests assert the day→month conversion.
+
+> Still worth a live-API confirmation when credentials are handy: Alibaba VPN `Bandwidth` config format (applied doc-consistent `Bandwidth:<mbps>`), and a real Huawei EIP by-traffic quote. Everything else is doc-aligned.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

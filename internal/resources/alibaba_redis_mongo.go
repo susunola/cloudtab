@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -24,7 +23,7 @@ func (AlibabaRedis) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
-				alibabaModule("InstanceClass", "Hour", class),
+				alibabaModule("InstanceClass", "Hour", "InstanceClass:"+class),
 			},
 		},
 	}, nil
@@ -63,7 +62,7 @@ func (AlibabaMongoDB) Extract(r parser.PlannedResource) (pricing.PriceRequest, e
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
-				alibabaModule("DBInstanceClass", "Hour", fmt.Sprintf("%s:%d", class, storage)),
+				alibabaModule("DBInstanceClass", "Hour", "DBInstanceClass:"+class),
 			},
 		},
 	}, nil

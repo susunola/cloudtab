@@ -28,7 +28,7 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}
 
 	moduleList := []map[string]string{
-		alibabaModule("InstanceType", "Hour", instanceType+":"+osType),
+		alibabaModule("InstanceType", "Hour", "InstanceType:"+instanceType+",ImageOs:"+osType),
 	}
 
 	// System disk
@@ -37,7 +37,7 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		if size <= 0 {
 			size = 40
 		}
-		moduleList = append(moduleList, alibabaModule("SystemDisk", "Hour", fmt.Sprintf("%s:%d", cat, size)))
+		moduleList = append(moduleList, alibabaModule("SystemDisk", "Hour", fmt.Sprintf("SystemDisk.Category:%s,SystemDisk.Size:%d", cat, size)))
 	}
 
 	return pricing.PriceRequest{

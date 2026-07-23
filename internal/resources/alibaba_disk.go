@@ -23,12 +23,12 @@ func (AlibabaDisk) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	}
 	return pricing.PriceRequest{
 		Provider: "alibaba",
-		Product:  "disk",
+		Product:  "yundisk",
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
-				alibabaModule("DiskSize", "Hour", fmt.Sprintf("%s:%d", category, size)),
+				alibabaModule("DataDisk", "Hour", fmt.Sprintf("DataDisk.Size:%d,DataDisk.Category:%s", size, category)),
 			},
 		},
 	}, nil

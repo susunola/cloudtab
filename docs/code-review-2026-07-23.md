@@ -12,6 +12,8 @@
 > - #10 新增请求体快照测试（mock client 捕获 SDK 入参），锁定 #1/#2，覆盖全部 9 个华为 + 9 个阿里 mapper。
 >
 > ⚠️ **待真实 API 验证（非代码缺陷，需联调）**：`usage_factor` 各资源取值、`size_measure_id=17`（GB，EVS 线性计费）、以及 EIP/ELB 按流量计费应选 `"upflow"` 的场景。代码已按 SDK 注释实现，但需一次真实调用确认。
+>
+> ✅ **该验证项已在 v0.3.2 关闭（2026-07-23）**：对照华为 `ListOnDemandResourceRatings` 与阿里 `GetPayAsYouGoPrice` 官方文档逐项核对，并修复 9 处会导致价格为空/明显错误的 mapper 缺陷（`usage_measure_id` 1→4/小时、`upflow`→10/GB；EIP 拆成「公网 IP + 线性带宽」两部分；EVS 带 `resource_size`+`size_measure_id 17`；阿里 disk→`yundisk`、nat→`nat_gw`；`Config` 改用 `PropertyCode:Value`；EIP/NAT 按天计价用 `daysPerMonth`）。所有 45 个 mapper 通过 `go vet` + `go test -race`。**仅剩 2 处建议有凭据时再联调确认**：阿里 VPN `Bandwidth` config 格式、真实华为 EIP 按流量报价。其余均已与文档对齐。
 
 覆盖维度：安全性 / 健壮性 / 高可用容错 / 可读性 / 扩展性 / 性能 / 测试。
 严重度：🔴 高（隐藏 bug / 破坏多云定位）· 🟠 中（需改进）· 🟡 低（卫生问题）。
