@@ -23,9 +23,8 @@ func (AlibabaRedis) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "InstanceClass", "PriceType": "Hour", "Config": class},
+				alibabaModule("InstanceClass", "Hour", class),
 			},
 		},
 	}, nil
@@ -63,9 +62,8 @@ func (AlibabaMongoDB) Extract(r parser.PlannedResource) (pricing.PriceRequest, e
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "DBInstanceClass", "PriceType": "Hour", "Config": fmt.Sprintf("%s:%d", class, storage)},
+				alibabaModule("DBInstanceClass", "Hour", fmt.Sprintf("%s:%d", class, storage)),
 			},
 		},
 	}, nil

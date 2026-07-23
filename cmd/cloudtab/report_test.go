@@ -92,7 +92,7 @@ func TestPriceReportDrainsManyResults(t *testing.T) {
 
 	// Small concurrency amplifies the fan-in pressure the old design deadlocked
 	// under. The test harness's own timeout catches a hang.
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 2)
+	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 2, false)
 	if err != nil {
 		t.Fatalf("priceReport error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestPriceReportConcurrencyFloor(t *testing.T) {
 	defer engine.Close()
 
 	path := writeManyUnsupportedPlan(t, 5)
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 0) // clamped to 1
+	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 0, false) // clamped to 1
 	if err != nil {
 		t.Fatalf("priceReport error: %v", err)
 	}

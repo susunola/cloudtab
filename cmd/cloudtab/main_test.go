@@ -58,13 +58,17 @@ func TestCachePathForFlags(t *testing.T) {
 	}
 }
 
-func TestEngineCreationWithCacheDir(t *testing.T) {
-	// Ensure newEngine does not fail due to cache dir when env creds are missing.
+func TestEngineCreationWithoutTencentCreds(t *testing.T) {
+	// Tencent creds are validated lazily (only when a Tencent Cloud resource is
+	// actually priced), so a multi-cloud plan must not require them up front.
 	os.Unsetenv("TENCENTCLOUD_SECRET_ID")
 	os.Unsetenv("TENCENTCLOUD_SECRET_KEY")
-	_, err := newEngine("ap-guangzhou", "", false, t.TempDir(), 0, 0)
-	if err == nil {
-		t.Fatal("expected error without credentials")
+	eng, err := newEngine("ap-guangzhou", "", false, t.TempDir(), 0, 0, 0)
+	if err != nil {
+		t.Fatalf("newEngine without Tencent creds: %v (want no error)", err)
+	}
+	if eng == nil {
+		t.Fatal("newEngine returned nil engine")
 	}
 }
 

@@ -32,9 +32,8 @@ func (AlibabaRDS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "DBInstanceClass", "PriceType": "Hour", "Config": fmt.Sprintf("%s:%s:%d", strings.ToLower(engine), class, storage)},
+				alibabaModule("DBInstanceClass", "Hour", fmt.Sprintf("%s:%s:%d", strings.ToLower(engine), class, storage)),
 			},
 		},
 	}, nil

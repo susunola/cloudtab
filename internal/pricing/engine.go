@@ -75,6 +75,12 @@ type Config struct {
 	HuaweiAccessKeyID     string
 	HuaweiSecretAccessKey string
 
+	// HuaweiProjectID is the UUID project ID sent as RateOnDemandReq.ProjectId
+	// for Huawei Cloud pricing. It is NOT the region. When empty, no project_id
+	// is sent (the API then bills under the credential's default project). Read
+	// from HUAWEI_PROJECT_ID env in the CLI.
+	HuaweiProjectID string
+
 	// Timeout bounds a single pricing round-trip (per attempt) so a stalled
 	// InquiryPrice call cannot hang the whole cost run. It is applied to both
 	// backends: for Tencent Cloud via the SDK profile's HttpProfile.ReqTimeout
@@ -88,6 +94,11 @@ type Config struct {
 	// fail immediately. Zero means "use defaultMaxRetries"; a negative value
 	// disables retries entirely.
 	MaxRetries int
+
+	// CacheTTL sets how long a successful pricing response stays in the on-disk
+	// cache before being treated as stale. Zero means "use defaultTTL" (24h).
+	// A shorter TTL keeps prices fresher at the cost of more API calls.
+	CacheTTL time.Duration
 }
 
 const (
@@ -246,12 +257,13 @@ type inflightCall struct {
 }
 
 func NewEngine(cfg Config) (*Engine, error) {
-	if cfg.SecretID == "" || cfg.SecretKey == "" {
-		return nil, errors.New("missing TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
-	}
+	// Tencent Cloud credentials are no longer required up front: a plan that
+	// only prices AWS / Alibaba / Huawei resources needs none of them. We
+	// validate the Tencent SecretID/SecretKey lazily inside dispatch() only
+	// when a Tencent Cloud resource is actually priced (code review #3).
 	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}}
 	if cfg.CachePath != "" && !cfg.NoCache {
-		c, err := openCache(cfg.CachePath)
+		c, err := openCache(cfg.CachePath, cfg.CacheTTL)
 		if err != nil {
 			// Cache is an optimization, not a correctness requirement. If another
 			// process holds the lock or the path is unusable, degrade gracefully
@@ -372,6 +384,9 @@ func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
 	switch req.provider() {
 	case providerTencent:
+		if e.cfg.SecretID == "" || e.cfg.SecretKey == "" {
+			return nil, fmt.Errorf("tencentcloud: missing credentials (set TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY or Config.SecretID / SecretKey)")
+		}
 		region := req.Region
 		if region == "" {
 			region = e.cfg.Region

@@ -270,8 +270,8 @@ rm -rf ~/.cloudtab/
 
 ## 8. FAQ / 常见错误
 
-**Q: `missing TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY`**  
-A: 环境变量没设。`echo $TENCENTCLOUD_SECRET_ID` 检查一下；CI 里检查 `env:` 是否传进来。
+**Q: `tencentcloud: missing credentials (set TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY ...)`**  
+A: 只对 **腾讯云** 资源校验凭证，且**按需**触发——纯 AWS / 阿里云 / 华为云 plan 不需要腾讯密钥。环境变量没设或为空时会报这个错。`echo $TENCENTCLOUD_SECRET_ID` 检查一下；CI 里检查 `env:` 是否传进来。
 
 **Q: `tencent api AuthFailure.SignatureFailure: The provided credentials could not be validated`**  
 A: SecretId/Key 错了，或子账号没有对应产品的 `InquiryPrice*` 权限。回到 [第 2 节](#2-准备腾讯云凭据) 检查策略。

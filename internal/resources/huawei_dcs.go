@@ -26,18 +26,8 @@ func (HuaweiDCS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 		Product:  "dcs",
 		Region:   r.Region,
 		Params: map[string]interface{}{
-			"project_id": r.Region,
 			"product_infos": []map[string]interface{}{
-				{
-					"id":                 "1",
-					"cloud_service_type": "hws.service.type.dcs",
-					"resource_type":      "hws.resource.type.dcs",
-					"resource_spec":      flavor,
-					"region":             r.Region,
-					"usage_factor":       "1",
-					"usage_value":        1,
-					"usage_measure_id":   1,
-				},
+				huaweiProductInfo("hws.service.type.dcs", "hws.resource.type.dcs", flavor, r.Region, 0, 0),
 			},
 		},
 	}, nil

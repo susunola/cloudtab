@@ -25,18 +25,8 @@ func (HuaweiECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 		Product:  "ecs",
 		Region:   r.Region,
 		Params: map[string]interface{}{
-			"project_id": r.Region,
 			"product_infos": []map[string]interface{}{
-				{
-					"id":                 "1",
-					"cloud_service_type": "hws.service.type.ec2",
-					"resource_type":      "hws.resource.type.vm",
-					"resource_spec":      flavorID,
-					"region":             r.Region,
-					"usage_factor":       "1",
-					"usage_value":        1,
-					"usage_measure_id":   1,
-				},
+				huaweiProductInfo("hws.service.type.ec2", "hws.resource.type.vm", flavorID, r.Region, 0, 0),
 			},
 		},
 	}, nil

@@ -26,18 +26,8 @@ func (HuaweiCCE) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 		Product:  "cce",
 		Region:   r.Region,
 		Params: map[string]interface{}{
-			"project_id": r.Region,
 			"product_infos": []map[string]interface{}{
-				{
-					"id":                 "1",
-					"cloud_service_type": "hws.service.type.cce",
-					"resource_type":      "hws.resource.type.cce",
-					"resource_spec":      clusterType,
-					"region":             r.Region,
-					"usage_factor":       "1",
-					"usage_value":        1,
-					"usage_measure_id":   1,
-				},
+				huaweiProductInfo("hws.service.type.cce", "hws.resource.type.cce", clusterType, r.Region, 0, 0),
 			},
 		},
 	}, nil

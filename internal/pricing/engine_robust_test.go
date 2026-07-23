@@ -243,7 +243,7 @@ func TestInflightDedupClearsAfterCompletion(t *testing.T) {
 
 func TestQueryFailureNotCached(t *testing.T) {
 	dir := t.TempDir()
-	c, err := openCache(dir + "/cache.db")
+	c, err := openCache(dir+"/cache.db", 0)
 	if err != nil {
 		t.Fatalf("openCache: %v", err)
 	}

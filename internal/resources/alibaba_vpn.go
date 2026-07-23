@@ -11,7 +11,7 @@ import (
 
 // AlibabaVPN handles `alicloud_vpn_gateway`.
 //
-// Priced via Alibaba Cloud BSS DescribePrice with ProductCode "vpn".
+// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "vpn".
 // ModuleList: Bandwidth.
 type AlibabaVPN struct{}
 
@@ -34,9 +34,8 @@ func (AlibabaVPN) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "Bandwidth", "PriceType": "Hour", "Config": fmt.Sprintf("%d:Mbps", bandwidth)},
+				alibabaModule("Bandwidth", "Hour", fmt.Sprintf("%d:Mbps", bandwidth)),
 			},
 		},
 	}, nil

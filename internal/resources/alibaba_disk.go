@@ -27,9 +27,8 @@ func (AlibabaDisk) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "DiskSize", "PriceType": "Hour", "Config": fmt.Sprintf("%s:%d", category, size)},
+				alibabaModule("DiskSize", "Hour", fmt.Sprintf("%s:%d", category, size)),
 			},
 		},
 	}, nil

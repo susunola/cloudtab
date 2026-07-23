@@ -200,3 +200,43 @@ func parseHuaweiPrice(raw []byte) (huaweiPriceInfo, error) {
 	}
 	return huaweiPriceInfo{Amount: amt, Currency: cur}, nil
 }
+
+// --- request builders (shared by multi-cloud mappers) ---
+
+// huaweiProductInfo builds a single DemandProductInfo payload map for the
+// Huawei Cloud BSS ListOnDemandResourceRatings API. It centralizes the stable
+// scalar fields (id, usage_factor=Duration, usage_value, usage_measure_id,
+// subscription_num) so individual mappers only pass semantic values. This
+// removes the hand-written string keys that previously produced the
+// usage_factor="1"/"size" and project_id=region bugs (code review #1/#2).
+//
+// For linear products billed per-unit (e.g. EVS disks per-GB) pass resourceSize
+// > 0 together with sizeMeasureID (17 = GB); they are omitted otherwise. The
+// project_id is injected by the backend, never by a mapper.
+func huaweiProductInfo(cloudServiceType, resourceType, resourceSpec, region string, resourceSize int, sizeMeasureID int32) map[string]interface{} {
+	pi := map[string]interface{}{
+		"id":                 "1",
+		"cloud_service_type": cloudServiceType,
+		"resource_type":      resourceType,
+		"resource_spec":      resourceSpec,
+		"region":             region,
+		"usage_factor":       "Duration",
+		"usage_value":        1,
+		"usage_measure_id":   1,
+		"subscription_num":   1,
+	}
+	if resourceSize > 0 {
+		pi["resource_size"] = resourceSize
+	}
+	if sizeMeasureID > 0 {
+		pi["size_measure_id"] = sizeMeasureID
+	}
+	return pi
+}
+
+// alibabaModule builds a single BSS GetPayAsYouGoPrice ModuleList entry,
+// centralizing the three string keys so mappers cannot mistype them (code
+// review #8).
+func alibabaModule(code, priceType, config string) map[string]string {
+	return map[string]string{"ModuleCode": code, "PriceType": priceType, "Config": config}
+}

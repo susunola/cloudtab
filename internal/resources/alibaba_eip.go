@@ -22,9 +22,8 @@ func (AlibabaEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "Bandwidth", "PriceType": "Hour", "Config": fmt.Sprintf("%d:Mbps", bandwidth)},
+				alibabaModule("Bandwidth", "Hour", fmt.Sprintf("%d:Mbps", bandwidth)),
 			},
 		},
 	}, nil

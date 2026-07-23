@@ -10,10 +10,12 @@
 //   - req.Product  = informational label (e.g. "ecs", "rds", "dcs").
 //   - req.Region   = the Huawei Cloud region (e.g. "cn-north-4", "ap-singapore").
 //   - req.Params   = the RateOnDemandReq body fields:
-//       "project_id":        string
 //       "product_infos":     []DemandProductInfo
 //     where each DemandProductInfo has: id, cloud_service_type, resource_type,
-//     resource_spec, region, usage_factor, usage_value, usage_measure_id, subscription_num.
+//     resource_spec, region, usage_factor, usage_value, usage_measure_id,
+//     subscription_num. The project_id (a UUID, NOT the region) is injected by
+//     the backend from Config.HuaweiProjectID / HUAWEI_PROJECT_ID — mappers
+//     must NOT set it.
 package pricing
 
 import (
@@ -22,6 +24,7 @@ import (
 	"os"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/global"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	bssintl "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bssintl/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bssintl/v2/model"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bssintl/v2/region"
@@ -34,7 +37,8 @@ type huaweiBSSAPI interface {
 
 // huaweiBackend implements backend using the Huawei BSS ListOnDemandResourceRatings API.
 type huaweiBackend struct {
-	client huaweiBSSAPI
+	client    huaweiBSSAPI
+	projectID string // injected into RateOnDemandReq.ProjectId
 }
 
 // newHuaweiBackend builds the Huawei BSS backend. Credentials are resolved
@@ -65,9 +69,15 @@ func newHuaweiBackend(cfg Config) (backend, error) {
 		bssintl.BssintlClientBuilder().
 			WithRegion(region.ValueOf("cn-north-4")).
 			WithCredential(auth).
+			// Bound each HTTP round-trip so a stalled Huawei BSS call cannot
+			// hang the whole run (code review #4). --timeout now applies here
+			// too, matching the Tencent and AWS backends.
+			WithHttpConfig(config.DefaultHttpConfig().WithTimeout(cfg.requestTimeout())).
 			Build(),
 	)
-	return &huaweiBackend{client: client}, nil
+	// ProjectId (a UUID, NOT the region) is injected by the backend from
+	// Config.HuaweiProjectID / HUAWEI_PROJECT_ID. Mappers must not set it.
+	return &huaweiBackend{client: client, projectID: cfg.HuaweiProjectID}, nil
 }
 
 // query runs a single ListOnDemandResourceRatings call.
@@ -84,6 +94,14 @@ func (b *huaweiBackend) query(req PriceRequest) ([]byte, error) {
 	var body model.RateOnDemandReq
 	if err := json.Unmarshal(bodyBytes, &body); err != nil {
 		return nil, fmt.Errorf("huawei: unmarshal params: %w", err)
+	}
+
+	// Inject the project id (UUID) that mappers must not set. It is the
+	// RateOnDemandReq.ProjectId, distinct from the per-product region. When
+	// unset we leave the (empty) value so the API bills under the credential's
+	// default project.
+	if b.projectID != "" {
+		body.ProjectId = b.projectID
 	}
 
 	in := &model.ListOnDemandResourceRatingsRequest{Body: &body}

@@ -19,18 +19,8 @@ func (HuaweiEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 		Product:  "eip",
 		Region:   r.Region,
 		Params: map[string]interface{}{
-			"project_id": r.Region,
 			"product_infos": []map[string]interface{}{
-				{
-					"id":                 "1",
-					"cloud_service_type": "hws.service.type.vpc",
-					"resource_type":      "hws.resource.type.bandwidth",
-					"resource_spec":      "bandwidth",
-					"region":             r.Region,
-					"usage_factor":       "1",
-					"usage_value":        1,
-					"usage_measure_id":   1,
-				},
+				huaweiProductInfo("hws.service.type.vpc", "hws.resource.type.bandwidth", "bandwidth", r.Region, 0, 0),
 			},
 		},
 	}, nil

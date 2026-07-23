@@ -9,7 +9,7 @@ import (
 
 func TestCacheRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
-	c, err := openCache(path)
+	c, err := openCache(path, 0)
 	if err != nil {
 		t.Fatalf("openCache: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestCacheRoundTrip(t *testing.T) {
 
 func TestCacheExpiry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
-	c, err := openCache(path)
+	c, err := openCache(path, 0)
 	if err != nil {
 		t.Fatalf("openCache: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestCacheExpiry(t *testing.T) {
 
 func TestCachePersistsAcrossReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
-	c1, err := openCache(path)
+	c1, err := openCache(path, 0)
 	if err != nil {
 		t.Fatalf("openCache: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestCachePersistsAcrossReopen(t *testing.T) {
 	}
 	c1.Close()
 
-	c2, err := openCache(path)
+	c2, err := openCache(path, 0)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

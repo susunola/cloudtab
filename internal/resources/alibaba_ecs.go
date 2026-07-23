@@ -11,7 +11,7 @@ import (
 
 // AlibabaECS handles `alicloud_instance` (ECS).
 //
-// Priced via Alibaba Cloud BSS DescribePrice with ProductCode "ecs".
+// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "ecs".
 // ModuleList: InstanceType, SystemDisk (optional).
 type AlibabaECS struct{}
 
@@ -28,7 +28,7 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}
 
 	moduleList := []map[string]string{
-		{"ModuleCode": "InstanceType", "PriceType": "Hour", "Config": instanceType + ":" + osType},
+		alibabaModule("InstanceType", "Hour", instanceType+":"+osType),
 	}
 
 	// System disk
@@ -37,11 +37,7 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		if size <= 0 {
 			size = 40
 		}
-		moduleList = append(moduleList, map[string]string{
-			"ModuleCode": "SystemDisk",
-			"PriceType":  "Hour",
-			"Config":     fmt.Sprintf("%s:%d", cat, size),
-		})
+		moduleList = append(moduleList, alibabaModule("SystemDisk", "Hour", fmt.Sprintf("%s:%d", cat, size)))
 	}
 
 	return pricing.PriceRequest{
@@ -50,7 +46,6 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList":       moduleList,
 		},
 	}, nil

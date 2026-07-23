@@ -51,7 +51,7 @@ var Version = "(dev)"
 func main() {
 	root := &cobra.Command{
 		Use:     "cloudtab",
-		Short:   "Tencent Cloud cost estimation from Terraform plans",
+		Short:   "Multi-cloud cost estimation from Terraform plans",
 		Version: Version,
 	}
 	root.AddCommand(&cobra.Command{
@@ -74,12 +74,14 @@ func main() {
 		concurrency int
 		timeout     time.Duration
 		maxRetries  int
+		failOnError bool
+		cacheTTL    time.Duration
 	)
 	breakdown := &cobra.Command{
 		Use:   "breakdown",
 		Short: "Show monthly cost of a Terraform plan",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(region, site, noCache, cacheDir, timeout, maxRetries)
+			engine, err := newEngine(region, site, noCache, cacheDir, timeout, maxRetries, cacheTTL)
 			if err != nil {
 				return err
 			}
@@ -89,7 +91,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("load usage file: %w", err)
 			}
-			rep, err := priceReport(engine, path, usage, resolveConcurrency(concurrency))
+			rep, err := priceReport(engine, path, usage, resolveConcurrency(concurrency), failOnError)
 			if err != nil {
 				return err
 			}
@@ -106,6 +108,8 @@ func main() {
 	breakdown.Flags().IntVar(&concurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
 	breakdown.Flags().DurationVar(&timeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
 	breakdown.Flags().IntVar(&maxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
+	breakdown.Flags().BoolVar(&failOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
+	breakdown.Flags().DurationVar(&cacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
 
 	// -- diff --
 	var (
@@ -121,12 +125,14 @@ func main() {
 		diffConcurrency int
 		diffTimeout     time.Duration
 		diffMaxRetries  int
+		diffFailOnError bool
+		diffCacheTTL    time.Duration
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
 		Short: "Compare monthly cost between two plans (before -> after)",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries)
+			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries, diffCacheTTL)
 			if err != nil {
 				return err
 			}
@@ -142,11 +148,11 @@ func main() {
 			}
 
 			conc := resolveConcurrency(diffConcurrency)
-			b, err := priceReport(engine, before, beforeUsage, conc)
+			b, err := priceReport(engine, before, beforeUsage, conc, diffFailOnError)
 			if err != nil {
 				return fmt.Errorf("before: %w", err)
 			}
-			a, err := priceReport(engine, after, afterUsage, conc)
+			a, err := priceReport(engine, after, afterUsage, conc, diffFailOnError)
 			if err != nil {
 				return fmt.Errorf("after: %w", err)
 			}
@@ -165,6 +171,8 @@ func main() {
 	diff.Flags().IntVar(&diffConcurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
 	diff.Flags().DurationVar(&diffTimeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
 	diff.Flags().IntVar(&diffMaxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
+	diff.Flags().BoolVar(&diffFailOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
+	diff.Flags().DurationVar(&diffCacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
@@ -176,7 +184,7 @@ func main() {
 	}
 }
 
-func newEngine(region, site string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int) (*pricing.Engine, error) {
+func newEngine(region, site string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int, cacheTTL time.Duration) (*pricing.Engine, error) {
 	return pricing.NewEngine(pricing.Config{
 		SecretID:  os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		SecretKey: os.Getenv("TENCENTCLOUD_SECRET_KEY"),
@@ -190,6 +198,11 @@ func newEngine(region, site string, noCache bool, cacheDir string, timeout time.
 		// flag's zero-value default here is intentional and safe.
 		Timeout:    timeout,
 		MaxRetries: maxRetries,
+		CacheTTL:   cacheTTL,
+
+		// Huawei Cloud BSS project id (a UUID, NOT a region), used as
+		// RateOnDemandReq.ProjectId. Optional; read from HUAWEI_PROJECT_ID.
+		HuaweiProjectID: os.Getenv("HUAWEI_PROJECT_ID"),
 
 		// AWS credentials for the optional AWS Price List backend. These are
 		// read from the standard AWS environment variables and are only used
@@ -241,7 +254,12 @@ func cachePathForFlags(noCache bool, cacheDir string) string {
 // priceReport is the shared pipeline: parse plan -> dispatch to mappers -> collect cost.
 // Mappers implementing resources.StaticMapper are evaluated locally; all others are
 // routed through the pricing engine with bounded concurrency so we stay under
-// Tencent Cloud's InquiryPrice QPS limit.
+// the provider's pricing QPS limit.
+//
+// By default the run is lenient: a resource whose pricing errors (API failure,
+// parse failure) is recorded as a SkippedResource and the rest of the report
+// still renders, so a single bad SKU cannot sink an entire large plan (code
+// review #5). Pass failOnError=true to restore the old hard-fail behaviour.
 //
 // Results and errors are drained by a single dedicated collector goroutine
 // running concurrently with the workers. This is deliberate: an earlier version
@@ -250,7 +268,7 @@ func cachePathForFlags(noCache bool, cacheDir string) string {
 // workers (every worker blocked writing to the full error channel while nobody
 // was reading). A live collector removes that failure mode entirely regardless
 // of how many resources error.
-func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int) (output.Report, error) {
+func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)
 	if err != nil {
@@ -281,7 +299,7 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 		go func() {
 			defer wg.Done()
 			for r := range jobs {
-				cost, skip, err := priceResource(engine, registry, r)
+				cost, skip, err := priceResource(engine, registry, r, failOnError)
 				if err != nil {
 					results <- result{err: fmt.Errorf("%s: %w", r.Address, err)}
 					continue
@@ -328,9 +346,11 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 }
 
 // priceResource prices a single planned resource, returning either a cost line
-// or a skip reason. A non-nil error is a hard failure (e.g. API error) that
-// aborts the whole report.
-func priceResource(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource) (*output.ResourceCost, *output.SkippedResource, error) {
+// or a skip reason. When failOnError is false (default), an API or parse error
+// becomes a SkippedResource rather than a hard failure, so one bad SKU cannot
+// abort the whole report. When failOnError is true, such errors are returned as
+// a non-nil error and fail the report.
+func priceResource(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, failOnError bool) (*output.ResourceCost, *output.SkippedResource, error) {
 	mapper, ok := registry.Lookup(r.Type)
 	if !ok {
 		return nil, &output.SkippedResource{
@@ -360,11 +380,21 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 	}
 	raw, err := engine.Query(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("query %s: %w", r.Address, err)
+		if failOnError {
+			return nil, nil, fmt.Errorf("query %s: %w", r.Address, err)
+		}
+		return nil, &output.SkippedResource{
+			Address: r.Address, Type: r.Type, Reason: err.Error(),
+		}, nil
 	}
 	comps, err := mapper.Parse(req, raw)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse %s: %w", r.Address, err)
+		if failOnError {
+			return nil, nil, fmt.Errorf("parse %s: %w", r.Address, err)
+		}
+		return nil, &output.SkippedResource{
+			Address: r.Address, Type: r.Type, Reason: err.Error(),
+		}, nil
 	}
 	return &output.ResourceCost{
 		Address: r.Address, Type: r.Type, Components: comps,

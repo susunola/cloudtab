@@ -28,18 +28,10 @@ func (HuaweiEVS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 		Product:  "evs",
 		Region:   r.Region,
 		Params: map[string]interface{}{
-			"project_id": r.Region,
 			"product_infos": []map[string]interface{}{
-				{
-					"id":                 "1",
-					"cloud_service_type": "hws.service.type.ebs",
-					"resource_type":      "hws.resource.type.volume",
-					"resource_spec":      volumeType,
-					"region":             r.Region,
-					"usage_factor":       "size",
-					"usage_value":        int(size),
-					"usage_measure_id":   1,
-				},
+				// EVS is billed per-GB (linear), so include resource_size and
+				// size_measure_id (17 = GB). usage_factor stays "Duration".
+				huaweiProductInfo("hws.service.type.ebs", "hws.resource.type.volume", volumeType, r.Region, int(size), 17),
 			},
 		},
 	}, nil

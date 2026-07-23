@@ -10,7 +10,7 @@ import (
 
 // AlibabaNAT handles `alicloud_nat_gateway`.
 //
-// Priced via Alibaba Cloud BSS DescribePrice with ProductCode "natgateway".
+// Priced via Alibaba Cloud BSS GetPayAsYouGoPrice with ProductCode "natgateway".
 // ModuleList: Specification.
 type AlibabaNAT struct{}
 
@@ -29,9 +29,8 @@ func (AlibabaNAT) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		Region:   r.Region,
 		Params: map[string]interface{}{
 			"SubscriptionType": "PayAsYouGo",
-			"Quantity":         1,
 			"ModuleList": []map[string]string{
-				{"ModuleCode": "Specification", "PriceType": "Hour", "Config": spec},
+				alibabaModule("Specification", "Hour", spec),
 			},
 		},
 	}, nil

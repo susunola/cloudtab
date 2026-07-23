@@ -32,7 +32,7 @@ const cacheBucket = "prices"
 // defaultTTL matches what the README advertises.
 const defaultTTL = 24 * time.Hour
 
-func openCache(path string) (*cache, error) {
+func openCache(path string, ttl time.Duration) (*cache, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -48,7 +48,10 @@ func openCache(path string) (*cache, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &cache{db: db, ttl: defaultTTL}, nil
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
+	return &cache{db: db, ttl: ttl}, nil
 }
 
 // Get returns the cached payload if present and not expired.
