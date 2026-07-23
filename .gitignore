@@ -8,3 +8,5 @@ plan*.json
 coverage.out
 # local helper — do NOT publish
 push.sh
+# WorkBuddy agent memory (personal, not part of the project)
+.workbuddy/
