@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Currently supports <b>Tencent Cloud</b> and <b>AWS</b>. Alibaba Cloud / Huawei Cloud on the roadmap.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 45 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ---
 
-`cloudtab` reads a Terraform plan and tells you what it will cost — **before** you `apply`. Same UX as Infracost, but focused on the clouds Infracost doesn't cover (Tencent Cloud + AWS today; Alibaba / Huawei next). A single plan may mix Tencent and AWS resources — each is routed to its own pricing backend by the resource's provider prefix.
+`cloudtab` reads a Terraform plan and tells you what it will cost — **before** you `apply`. Same UX as Infracost, but focused on the clouds Infracost doesn't cover (Tencent Cloud + AWS + Alibaba + Huawei). A single plan may mix resources from any supported provider — each is routed to its own pricing backend by the resource's provider prefix.
 
 - 🔌 **Zero setup** — one binary, provider credentials as env vars, one command
 - 💰 **Real prices, not guesses** — calls each cloud's official inquiry APIs; no hand-maintained price tables
@@ -54,14 +54,24 @@ export TENCENTCLOUD_SECRET_KEY=xxxxxxxx
 export AWS_ACCESS_KEY_ID=AKIAxxxx
 export AWS_SECRET_ACCESS_KEY=xxxxxxxx
 
+# 2c. (optional) Alibaba Cloud credentials — only needed for alicloud_* resources.
+#     Requires BSS (Business Support System) read access.
+export ALIBABA_ACCESS_KEY_ID=LTAIxxxx
+export ALIBABA_ACCESS_KEY_SECRET=xxxxxxxx
+
+# 2d. (optional) Huawei Cloud credentials — only needed for huaweicloud_* resources.
+#     Requires BSS (Business Support System) read access.
+export HUAWEI_ACCESS_KEY_ID=xxxx
+export HUAWEI_SECRET_ACCESS_KEY=xxxxxxxx
+
 # 3. generate a plan and estimate cost
 terraform plan -out=tf.plan
 terraform show -json tf.plan > plan.json
 cloudtab breakdown --path plan.json --region ap-guangzhou
 ```
 
-> A pure-Tencent plan needs **no** AWS credentials — the AWS SDK is only
-> initialised the first time an `aws_*` resource is priced.
+> A pure-Tencent plan needs **no** AWS/Alibaba/Huawei credentials — each backend is only
+> initialised the first time a resource from that provider is priced.
 
 ### Chinese-mainland vs International site
 
@@ -185,6 +195,44 @@ through a `location` filter, so any commercial AWS region is supported.
 AWS prices are quoted in **USD**; a mixed-provider plan shows a per-component
 `Currency` column and only sums a grand total when the currency is uniform.
 
+### Alibaba Cloud
+
+Priced live via the **Alibaba Cloud BSS API** (`GetPayAsYouGoPrice`). Supports all
+commercial Alibaba Cloud regions.
+
+| Product | Terraform type | Priced component |
+|---|---|---|
+| ECS | `alicloud_instance` | On-demand instance hour (per instance type) × 730 |
+| Disk | `alicloud_disk` | Per-GB-month storage rate × provisioned size |
+| EIP | `alicloud_eip_address` | Fixed hourly rate × 730 |
+| SLB (CLB) | `alicloud_slb_load_balancer` | Fixed spec-based hourly rate × 730 |
+| RDS | `alicloud_db_instance` | On-demand DB instance hour (per engine + spec) × 730 |
+| Redis (ApsaraDB) | `alicloud_kvstore_instance` | On-demand instance hour (per engine + spec) × 730 |
+| MongoDB | `alicloud_mongodb_instance` | On-demand instance hour (per spec) × 730 |
+| NAT Gateway | `alicloud_nat_gateway` | Fixed spec-based hourly rate × 730 |
+| VPN Gateway | `alicloud_vpn_gateway` | Fixed spec-based hourly rate × 730 |
+
+Alibaba prices are quoted in **CNY**.
+
+### Huawei Cloud
+
+Priced live via the **Huawei Cloud BSS API** (`ListOnDemandResourceRatings`).
+Supports all commercial Huawei Cloud regions.
+
+| Product | Terraform type | Priced component |
+|---|---|---|
+| ECS | `huaweicloud_compute_instance` | On-demand instance hour (per flavor) × 730 |
+| EVS | `huaweicloud_evs_volume` | Per-GB-month storage rate × provisioned size |
+| EIP | `huaweicloud_vpc_eip` | Fixed hourly rate × 730 |
+| ELB | `huaweicloud_elb_loadbalancer` | Fixed hourly rate × 730 |
+| RDS | `huaweicloud_rds_instance` | On-demand DB instance hour (per engine + flavor) × 730 |
+| DCS (Redis) | `huaweicloud_dcs_instance` | On-demand instance hour (per engine + spec) × 730 |
+| DDS (MongoDB) | `huaweicloud_dds_instance` | On-demand instance hour (per flavor) × 730 |
+| NAT Gateway | `huaweicloud_nat_gateway` | Fixed spec-based hourly rate × 730 |
+| CCE (Kubernetes) | `huaweicloud_cce_cluster` | Control-plane hour (per cluster) × 730 |
+
+Huawei prices are quoted in **CNY**.
+
 > **Not priced from a plan (by design):** `aws_s3_bucket`, `aws_eip` and
 > `aws_efs_file_system` are purely usage-driven — S3/EFS cost depends on GB
 > stored / requests / egress, and an EIP is only billed while idle/unattached or
@@ -223,12 +271,17 @@ A sticky PR comment like [this](examples/pr-comment.md) shows up on every PR tha
 ## Design in 60 seconds
 
 ```
-plan.json ─► parser ─► mapper (per resource type) ─► pricing engine ─► InquiryPrice* API
-                                                         │
-                                                         └─► local cache (sha256 → JSON)
-                                                                       │
-                                                                       ▼
-                                                              table / JSON / markdown
+plan.json ─► parser ─► mapper (per resource type) ─► pricing engine ─► provider backends
+                      │                            │     │
+                      ├── tencentcloud_* ──────────┤     ├─► Tencent InquiryPrice APIs
+                      ├── aws_* ───────────────────┤     ├─► AWS Pricing API
+                      ├── alicloud_* ──────────────┤     ├─► Alibaba BSS API
+                      └── huaweicloud_* ───────────┤     └─► Huawei BSS API
+                                                   │
+                                                   └─► local cache (sha256 → JSON)
+                                                                      │
+                                                                      ▼
+                                                             table / JSON / markdown
 ```
 
 Full architecture in [`docs/design.md`](docs/design.md) and the [visual architecture](docs/cloudtab-architecture.html).
@@ -243,11 +296,11 @@ Tencent Cloud (current):
 - [x] **M5** — TencentDB MySQL/Redis, `usage.yml` override wiring (`--usage-file`, `--before-usage-file`, `--after-usage-file`)
 - [ ] **M6** — Static price table for COS/CDN/SCF (no InquiryPrice API)
 
-Multi-cloud (next):
-- [ ] **M7** — Provider abstraction (`internal/providers/{tencent,aws,aliyun,huawei}/`)
-- [ ] **M8** — AWS EC2 / EBS / ELB via Pricing API (falls back to `infracost` where sensible)
-- [ ] **M9** — Alibaba Cloud ECS / EBS via `DescribePrice`
-- [ ] **M10** — Huawei Cloud ECS / EVS
+Multi-cloud (current):
+- [x] **M7** — Provider abstraction (`internal/pricing/engine.go` dispatch + lazy backends)
+- [x] **M8** — AWS EC2/EBS/ELB/RDS/ElastiCache/DocDB/Neptune/Redshift/OpenSearch/MQ/MSK/DynamoDB/EKS/NAT via Pricing API
+- [x] **M9** — Alibaba Cloud ECS/Disk/EIP/SLB/RDS/Redis/MongoDB/NAT/VPN via BSS `GetPayAsYouGoPrice`
+- [x] **M10** — Huawei Cloud ECS/EVS/EIP/ELB/RDS/DCS/DDS/NAT/CCE via BSS `ListOnDemandResourceRatings`
 
 Beyond:
 - [ ] VS Code inline hints (`Save as .tf → cost changes here`)
