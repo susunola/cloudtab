@@ -85,7 +85,7 @@ func newAWSBackend(cfg Config) (backend, error) {
 	}
 	return &awsBackend{
 		client:  pricing.NewFromConfig(awsCfg),
-		timeout: 30 * time.Second,
+		timeout: cfg.requestTimeout(),
 	}, nil
 }
 

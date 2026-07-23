@@ -62,9 +62,35 @@ func TestEngineCreationWithCacheDir(t *testing.T) {
 	// Ensure newEngine does not fail due to cache dir when env creds are missing.
 	os.Unsetenv("TENCENTCLOUD_SECRET_ID")
 	os.Unsetenv("TENCENTCLOUD_SECRET_KEY")
-	_, err := newEngine("ap-guangzhou", "", false, t.TempDir())
+	_, err := newEngine("ap-guangzhou", "", false, t.TempDir(), 0, 0)
 	if err == nil {
 		t.Fatal("expected error without credentials")
+	}
+}
+
+func TestResolveConcurrency(t *testing.T) {
+	// Positive flag wins over everything.
+	t.Setenv("CLOUDTAB_CONCURRENCY", "3")
+	if got := resolveConcurrency(5); got != 5 {
+		t.Errorf("flag should win: got %d, want 5", got)
+	}
+	// Zero flag falls back to a valid env value.
+	if got := resolveConcurrency(0); got != 3 {
+		t.Errorf("env fallback: got %d, want 3", got)
+	}
+	// A non-positive / unparseable env value falls through to the default.
+	t.Setenv("CLOUDTAB_CONCURRENCY", "0")
+	if got := resolveConcurrency(0); got != defaultConcurrency {
+		t.Errorf("bad env -> default: got %d, want %d", got, defaultConcurrency)
+	}
+	t.Setenv("CLOUDTAB_CONCURRENCY", "abc")
+	if got := resolveConcurrency(0); got != defaultConcurrency {
+		t.Errorf("unparseable env -> default: got %d, want %d", got, defaultConcurrency)
+	}
+	// Empty env + zero flag -> default.
+	t.Setenv("CLOUDTAB_CONCURRENCY", "")
+	if got := resolveConcurrency(0); got != defaultConcurrency {
+		t.Errorf("empty -> default: got %d, want %d", got, defaultConcurrency)
 	}
 }
 

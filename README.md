@@ -84,6 +84,39 @@ through verbatim as a custom root domain (e.g. a private-cloud gateway). Prices
 are cached separately per site, so switching sites never returns a stale
 cross-site price.
 
+### Performance & reliability flags
+
+Resources in a plan are priced **concurrently**, each request has a **timeout**,
+and transient errors (throttling / network blips) are **retried** with
+exponential backoff. All three are tuned with sensible built-in defaults and can
+be overridden per run on both `breakdown` and `diff`:
+
+| Flag | Env | Default | Meaning |
+|---|---|---|---|
+| `--concurrency` | `CLOUDTAB_CONCURRENCY` | `8` | Max resources priced in parallel. Clamped to `[1, number-of-resources]`. |
+| `--timeout` | – | `30s` | Per-request deadline for each pricing API call (Tencent & AWS). |
+| `--max-retries` | – | `2` | Extra attempts on retryable errors (so up to 3 tries). `0` disables retry. |
+
+```bash
+# tune for a large plan against a rate-limited account
+cloudtab breakdown --path plan.json --region ap-guangzhou \
+  --concurrency 4 --timeout 45s --max-retries 3
+
+# flag beats env; env beats default
+export CLOUDTAB_CONCURRENCY=4
+```
+
+Notes:
+
+- Retries only fire on **transient** failures (throttling, rate limits, 5xx,
+  timeouts, connection resets/EOF). A genuine hard error (bad SKU, unsupported
+  engine, auth failure) fails fast — it is never retried and **never cached**.
+- Identical concurrent requests are **de-duplicated in-flight**: if two resources
+  in the same plan need the exact same price, only one API call is made and both
+  share the result.
+- The run is **fail-fast**: any un-recoverable pricing error still aborts the
+  whole estimate (so a partial/misleading total is never emitted).
+
 Sample output:
 
 ```

@@ -27,8 +27,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -38,7 +40,10 @@ import (
 	"github.com/susunola/cloudtab/internal/resources"
 )
 
-const maxConcurrency = 8
+// defaultConcurrency bounds how many pricing lookups run in parallel. It keeps
+// us comfortably under Tencent Cloud's InquiryPrice QPS limit while still
+// overlapping network latency. Override with --concurrency / $CLOUDTAB_CONCURRENCY.
+const defaultConcurrency = 8
 
 // Version is set at build time via -ldflags "-X main.Version=...".
 var Version = "(dev)"
@@ -59,19 +64,22 @@ func main() {
 
 	// -- breakdown --
 	var (
-		path      string
-		region    string
-		format    string
-		usageFile string
-		noCache   bool
-		cacheDir  string
-		site      string
+		path        string
+		region      string
+		format      string
+		usageFile   string
+		noCache     bool
+		cacheDir    string
+		site        string
+		concurrency int
+		timeout     time.Duration
+		maxRetries  int
 	)
 	breakdown := &cobra.Command{
 		Use:   "breakdown",
 		Short: "Show monthly cost of a Terraform plan",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(region, site, noCache, cacheDir)
+			engine, err := newEngine(region, site, noCache, cacheDir, timeout, maxRetries)
 			if err != nil {
 				return err
 			}
@@ -81,7 +89,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("load usage file: %w", err)
 			}
-			rep, err := priceReport(engine, path, usage)
+			rep, err := priceReport(engine, path, usage, resolveConcurrency(concurrency))
 			if err != nil {
 				return err
 			}
@@ -95,6 +103,9 @@ func main() {
 	breakdown.Flags().BoolVar(&noCache, "no-cache", false, "Disable on-disk price cache")
 	breakdown.Flags().StringVar(&cacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	breakdown.Flags().StringVar(&site, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
+	breakdown.Flags().IntVar(&concurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
+	breakdown.Flags().DurationVar(&timeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
+	breakdown.Flags().IntVar(&maxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
 
 	// -- diff --
 	var (
@@ -107,12 +118,15 @@ func main() {
 		diffNoCache     bool
 		diffCacheDir    string
 		diffSite        string
+		diffConcurrency int
+		diffTimeout     time.Duration
+		diffMaxRetries  int
 	)
 	diff := &cobra.Command{
 		Use:   "diff",
 		Short: "Compare monthly cost between two plans (before -> after)",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir)
+			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries)
 			if err != nil {
 				return err
 			}
@@ -127,11 +141,12 @@ func main() {
 				return fmt.Errorf("load after usage file: %w", err)
 			}
 
-			b, err := priceReport(engine, before, beforeUsage)
+			conc := resolveConcurrency(diffConcurrency)
+			b, err := priceReport(engine, before, beforeUsage, conc)
 			if err != nil {
 				return fmt.Errorf("before: %w", err)
 			}
-			a, err := priceReport(engine, after, afterUsage)
+			a, err := priceReport(engine, after, afterUsage, conc)
 			if err != nil {
 				return fmt.Errorf("after: %w", err)
 			}
@@ -147,6 +162,9 @@ func main() {
 	diff.Flags().BoolVar(&diffNoCache, "no-cache", false, "Disable on-disk price cache")
 	diff.Flags().StringVar(&diffCacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	diff.Flags().StringVar(&diffSite, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
+	diff.Flags().IntVar(&diffConcurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
+	diff.Flags().DurationVar(&diffTimeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
+	diff.Flags().IntVar(&diffMaxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
@@ -158,7 +176,7 @@ func main() {
 	}
 }
 
-func newEngine(region, site string, noCache bool, cacheDir string) (*pricing.Engine, error) {
+func newEngine(region, site string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int) (*pricing.Engine, error) {
 	return pricing.NewEngine(pricing.Config{
 		SecretID:  os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		SecretKey: os.Getenv("TENCENTCLOUD_SECRET_KEY"),
@@ -166,6 +184,12 @@ func newEngine(region, site string, noCache bool, cacheDir string) (*pricing.Eng
 		Site:      resolveSite(site),
 		CachePath: cachePathForFlags(noCache, cacheDir),
 		NoCache:   noCache,
+
+		// Per-request timeout and transient-error retry budget. Zero values let
+		// the engine apply its own defaults (30s / 2 retries), so passing the
+		// flag's zero-value default here is intentional and safe.
+		Timeout:    timeout,
+		MaxRetries: maxRetries,
 
 		// AWS credentials for the optional AWS Price List backend. These are
 		// read from the standard AWS environment variables and are only used
@@ -187,6 +211,23 @@ func resolveSite(flagSite string) string {
 	return strings.TrimSpace(os.Getenv("TENCENTCLOUD_SITE"))
 }
 
+// resolveConcurrency picks the parallel-lookup count with an explicit
+// precedence: a positive --concurrency flag wins; otherwise a positive
+// $CLOUDTAB_CONCURRENCY env var; otherwise the built-in default. Non-positive
+// or unparseable values fall through to the next source so a bad env var never
+// silently drops the pipeline to a crawl.
+func resolveConcurrency(flagVal int) int {
+	if flagVal > 0 {
+		return flagVal
+	}
+	if s := strings.TrimSpace(os.Getenv("CLOUDTAB_CONCURRENCY")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultConcurrency
+}
+
 func cachePathForFlags(noCache bool, cacheDir string) string {
 	if noCache {
 		return ""
@@ -201,7 +242,15 @@ func cachePathForFlags(noCache bool, cacheDir string) string {
 // Mappers implementing resources.StaticMapper are evaluated locally; all others are
 // routed through the pricing engine with bounded concurrency so we stay under
 // Tencent Cloud's InquiryPrice QPS limit.
-func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides) (output.Report, error) {
+//
+// Results and errors are drained by a single dedicated collector goroutine
+// running concurrently with the workers. This is deliberate: an earlier version
+// buffered errors in a channel sized to the worker count and only drained it
+// after wg.Wait(), which deadlocked when more resources failed than there were
+// workers (every worker blocked writing to the full error channel while nobody
+// was reading). A live collector removes that failure mode entirely regardless
+// of how many resources error.
+func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int) (output.Report, error) {
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)
 	if err != nil {
@@ -209,32 +258,46 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 	}
 	registry := resources.DefaultRegistry()
 
-	jobs := make(chan parser.PlannedResource, len(plan.Resources))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	errs := make(chan error, maxConcurrency)
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	// No point spinning up more workers than there are resources to price.
+	if n := len(plan.Resources); n > 0 && concurrency > n {
+		concurrency = n
+	}
 
-	for i := 0; i < maxConcurrency; i++ {
+	type result struct {
+		cost *output.ResourceCost
+		skip *output.SkippedResource
+		err  error
+	}
+
+	jobs := make(chan parser.PlannedResource, len(plan.Resources))
+	results := make(chan result, len(plan.Resources))
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for r := range jobs {
 				cost, skip, err := priceResource(engine, registry, r)
 				if err != nil {
-					errs <- fmt.Errorf("%s: %w", r.Address, err)
+					results <- result{err: fmt.Errorf("%s: %w", r.Address, err)}
 					continue
 				}
-				mu.Lock()
-				if cost != nil {
-					rep.Resources = append(rep.Resources, *cost)
-				}
-				if skip != nil {
-					rep.Skipped = append(rep.Skipped, *skip)
-				}
-				mu.Unlock()
+				results <- result{cost: cost, skip: skip}
 			}
 		}()
 	}
+
+	// Close results once all workers have finished, so the collector's range
+	// terminates. The collector runs concurrently with the workers, so the
+	// results channel can never back-pressure a worker into a deadlock.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
 	for _, r := range plan.Resources {
 		if u, ok := usage[r.Address]; ok {
@@ -243,13 +306,21 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 		jobs <- r
 	}
 	close(jobs)
-	wg.Wait()
-	close(errs)
 
 	var pricingErrs []error
-	for e := range errs {
-		pricingErrs = append(pricingErrs, e)
+	for res := range results {
+		if res.err != nil {
+			pricingErrs = append(pricingErrs, res.err)
+			continue
+		}
+		if res.cost != nil {
+			rep.Resources = append(rep.Resources, *res.cost)
+		}
+		if res.skip != nil {
+			rep.Skipped = append(rep.Skipped, *res.skip)
+		}
 	}
+
 	if len(pricingErrs) > 0 {
 		return rep, errors.Join(pricingErrs...)
 	}

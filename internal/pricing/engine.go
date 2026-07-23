@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
@@ -59,6 +60,53 @@ type Config struct {
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
 	AWSSessionToken    string
+
+	// Timeout bounds a single pricing round-trip (per attempt) so a stalled
+	// InquiryPrice call cannot hang the whole cost run. It is applied to both
+	// backends: for Tencent Cloud via the SDK profile's HttpProfile.ReqTimeout
+	// (whole-second granularity), and for AWS via a context deadline. Zero or
+	// negative means "use defaultRequestTimeout".
+	Timeout time.Duration
+
+	// MaxRetries is the number of ADDITIONAL attempts made after the first when
+	// a request fails with a retryable error (rate limiting, request timeout,
+	// transient network/5xx). Non-retryable errors (bad params, unknown SKU)
+	// fail immediately. Zero means "use defaultMaxRetries"; a negative value
+	// disables retries entirely.
+	MaxRetries int
+}
+
+const (
+	// defaultRequestTimeout mirrors the AWS backend's original 30s bound and is
+	// now applied to Tencent calls as well so neither backend can hang forever.
+	defaultRequestTimeout = 30 * time.Second
+	// defaultMaxRetries retries a couple of times on transient/rate-limit
+	// errors, which is enough to ride out a brief InquiryPrice QPS spike without
+	// materially lengthening a healthy run.
+	defaultMaxRetries = 2
+	// retryBaseBackoff is the first backoff; it doubles each attempt (capped).
+	retryBaseBackoff = 200 * time.Millisecond
+	retryMaxBackoff  = 2 * time.Second
+)
+
+// requestTimeout resolves the effective per-attempt timeout.
+func (c Config) requestTimeout() time.Duration {
+	if c.Timeout > 0 {
+		return c.Timeout
+	}
+	return defaultRequestTimeout
+}
+
+// maxRetries resolves the effective retry count. A negative Config value means
+// "no retries" (0 additional attempts); zero means "use the default".
+func (c Config) maxRetries() int {
+	if c.MaxRetries < 0 {
+		return 0
+	}
+	if c.MaxRetries == 0 {
+		return defaultMaxRetries
+	}
+	return c.MaxRetries
 }
 
 // rootDomainForSite maps a Site selector to the SDK RootDomain suffix.
@@ -152,13 +200,30 @@ type Engine struct {
 	awsOnce sync.Once
 	aws     backend
 	awsErr  error
+
+	// inflight de-duplicates concurrent identical requests within this process:
+	// when several goroutines ask for the same cache key at once (a plan with
+	// many identically-specced resources on a cold cache), only the first does
+	// the real backend call; the rest wait on its result. This is a minimal,
+	// dependency-free equivalent of singleflight (we deliberately avoid pulling
+	// in golang.org/x/sync to preserve the zero-dependency-drift invariant).
+	flightMu sync.Mutex
+	flight   map[string]*inflightCall
+}
+
+// inflightCall is a single de-duplicated request in progress. Waiters block on
+// done, then read the shared result.
+type inflightCall struct {
+	done chan struct{}
+	resp []byte
+	err  error
 }
 
 func NewEngine(cfg Config) (*Engine, error) {
 	if cfg.SecretID == "" || cfg.SecretKey == "" {
 		return nil, errors.New("missing TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
 	}
-	e := &Engine{cfg: cfg, clients: map[string]interface{}{}}
+	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}}
 	if cfg.CachePath != "" && !cfg.NoCache {
 		c, err := openCache(cfg.CachePath)
 		if err != nil {
@@ -181,28 +246,98 @@ func (e *Engine) Close() error {
 
 // Query dispatches to the right SDK client and returns the raw response JSON.
 // The per-type Mapper decodes it into typed CostComponents.
+//
+// The request path is: on-disk cache -> in-flight de-duplication -> backend
+// dispatch (with retry). The cache and dedup layers key off the same
+// site-namespaced cache key so a healthy run touches each distinct SKU at most
+// once, keeping us well under the InquiryPrice QPS limit.
 func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	// The cache key must include the site: the Chinese-mainland and
 	// International sites return different prices (and possibly currencies) for
 	// an otherwise identical request, so their responses must never collide.
-	// A key failure is non-fatal — we simply run uncached for this request.
+	// A key failure is non-fatal — we simply run uncached (and un-deduped) for
+	// this request.
 	key, keyErr := e.cacheKey(req)
+	keyed := keyErr == nil
 
-	if e.cache != nil && keyErr == nil {
+	if e.cache != nil && keyed {
 		if hit, ok := e.cache.Get(key); ok {
 			return hit, nil
 		}
 	}
 
-	resp, err := e.dispatch(req)
+	// Without a usable key we cannot safely de-duplicate or cache; just run.
+	if !keyed {
+		return e.dispatchWithRetry(req)
+	}
+
+	resp, err := e.do(key, req)
 	if err != nil {
 		return nil, err
 	}
-
-	if e.cache != nil && keyErr == nil {
-		_ = e.cache.Put(key, resp)
-	}
 	return resp, nil
+}
+
+// do performs a keyed request through the in-flight de-duplication layer. The
+// first caller for a key runs the real backend call (and populates the cache);
+// concurrent callers for the same key block and share its result instead of
+// issuing their own backend call.
+func (e *Engine) do(key string, req PriceRequest) ([]byte, error) {
+	e.flightMu.Lock()
+	// Lazily initialise the in-flight map. NewEngine always populates it, but
+	// guarding here means a directly-constructed &Engine{} (e.g. in tests or
+	// future call sites) can never panic on a nil-map write.
+	if e.flight == nil {
+		e.flight = map[string]*inflightCall{}
+	}
+	if call, ok := e.flight[key]; ok {
+		e.flightMu.Unlock()
+		<-call.done
+		return call.resp, call.err
+	}
+	call := &inflightCall{done: make(chan struct{})}
+	e.flight[key] = call
+	e.flightMu.Unlock()
+
+	call.resp, call.err = e.dispatchWithRetry(req)
+
+	// Populate the on-disk cache only on success so a transient failure is not
+	// remembered.
+	if call.err == nil && e.cache != nil {
+		_ = e.cache.Put(key, call.resp)
+	}
+
+	e.flightMu.Lock()
+	delete(e.flight, key)
+	e.flightMu.Unlock()
+	close(call.done)
+
+	return call.resp, call.err
+}
+
+// dispatchWithRetry wraps dispatch with a bounded exponential backoff, retrying
+// only errors classified as retryable (rate limiting, request timeout, or a
+// transient network/5xx hiccup). Non-retryable errors — unknown product, bad
+// params, unsupported action — return immediately so a mistake fails fast.
+func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
+	attempts := e.cfg.maxRetries() + 1
+	backoff := retryBaseBackoff
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		resp, err := e.dispatch(req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if i == attempts-1 || !isRetryable(err) {
+			break
+		}
+		time.Sleep(backoff)
+		if backoff *= 2; backoff > retryMaxBackoff {
+			backoff = retryMaxBackoff
+		}
+	}
+	return nil, lastErr
 }
 
 // dispatch routes a request to the provider-specific backend. Tencent Cloud is
@@ -225,10 +360,61 @@ func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return b.query(req)
+		resp, err := b.query(req)
+		if err != nil {
+			return nil, fmt.Errorf("aws %s: %w", req.Product, err)
+		}
+		return resp, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", req.provider())
 	}
+}
+
+// isRetryable reports whether an error is worth retrying with backoff. It is
+// deliberately conservative: only rate limiting, request timeouts, and clearly
+// transient server/network conditions qualify. Anything else (bad params,
+// unknown SKU, unsupported product/action) is a deterministic failure that a
+// retry cannot fix, so it returns false and fails fast.
+//
+// Tencent Cloud surfaces API errors as strings via sdkResult ("tencent api
+// <Code>: <Message>"); AWS SDK errors carry throttling/timeout signatures in
+// their text too. Matching on well-known substrings keeps this dependency-free
+// and works across both backends without importing either SDK's error types
+// here.
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, sig := range retryableSignatures {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryableSignatures are lowercase substrings that mark a transient error.
+// Tencent throttling codes take the form "RequestLimitExceeded" /
+// "...LimitExceeded" / "InternalError"; AWS throttling is "Throttling" /
+// "ThrottlingException" / "TooManyRequestsException". Timeouts and connection
+// resets are transient on either side.
+var retryableSignatures = []string{
+	"limitexceeded", // Tencent RequestLimitExceeded / <X>.LimitExceeded
+	"requestlimitexceeded",
+	"throttl",         // AWS Throttling / ThrottlingException
+	"toomanyrequests", // AWS TooManyRequestsException
+	"rate exceeded",
+	"internalerror",      // Tencent transient InternalError
+	"serviceunavailable", // 503
+	"service unavailable",
+	"timeout", // context/request/dial timeout
+	"timed out",
+	"deadline exceeded",
+	"connection reset",
+	"connection refused",
+	"eof", // truncated response / closed connection
+	"temporary",
 }
 
 // awsBackend lazily constructs the AWS pricing backend once and reuses it. The
@@ -279,6 +465,11 @@ func (e *Engine) client(product, region string, newFn clientFn) (interface{}, er
 	if rd := rootDomainForSite(e.cfg.Site); rd != "" {
 		prof.HttpProfile.RootDomain = rd
 	}
+	// Bound each HTTP round-trip so a stalled InquiryPrice call cannot hang the
+	// whole run. The SDK's ReqTimeout is whole-second granularity, so we round
+	// up (a sub-second timeout still yields at least 1s rather than 0 = no
+	// timeout). This mirrors the AWS backend's context deadline.
+	prof.HttpProfile.ReqTimeout = timeoutSeconds(e.cfg.requestTimeout())
 
 	c, err := newFn(credential, prof)
 	if err != nil {
@@ -308,7 +499,28 @@ func (e *Engine) invoke(h productHandler, region string, req PriceRequest) ([]by
 	if !ok {
 		return nil, fmt.Errorf("unsupported %s action %q", h.product, req.Action)
 	}
-	return action(raw, req.Params)
+	resp, err := action(raw, req.Params)
+	if err != nil {
+		return nil, fmt.Errorf("tencentcloud %s.%s: %w", h.product, req.Action, err)
+	}
+	return resp, nil
+}
+
+// timeoutSeconds converts a duration into the whole-second timeout the Tencent
+// SDK profile expects, rounding up so any positive duration yields at least 1s
+// (0 would disable the timeout, which is exactly what we want to avoid).
+func timeoutSeconds(d time.Duration) int {
+	if d <= 0 {
+		return int(defaultRequestTimeout / time.Second)
+	}
+	secs := int(d / time.Second)
+	if d%time.Second != 0 {
+		secs++
+	}
+	if secs < 1 {
+		secs = 1
+	}
+	return secs
 }
 
 // ----- helpers -----
