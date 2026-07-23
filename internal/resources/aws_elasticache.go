@@ -44,28 +44,17 @@ func (AWSElastiCacheCluster) Extract(r parser.PlannedResource) (pricing.PriceReq
 }
 
 func (AWSElastiCacheCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	nodeType := filterValue(req, "instanceType")
 	engine := filterValue(req, "cacheEngine")
 	nodes := awsQuantity(req)
 	if nodes <= 0 {
 		nodes = 1
 	}
-	hourly := price.USD * float64(nodes)
 	name := fmt.Sprintf("ElastiCache %s %s", engine, nodeType)
 	if nodes > 1 {
 		name = fmt.Sprintf("ElastiCache %s %s x%d", engine, nodeType, nodes)
 	}
-	return []output.CostComponent{{
-		Name:        name,
-		Unit:        "HOUR",
-		HourlyCost:  hourly,
-		MonthlyCost: awsHourlyToMonthly(hourly),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsScaledCost(name, float64(nodes), raw)
 }
 
 // awsCacheEngine maps the Terraform `engine` value to the Price List

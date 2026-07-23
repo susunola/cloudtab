@@ -44,17 +44,7 @@ func (AWSRDSClusterInstance) Extract(r parser.PlannedResource) (pricing.PriceReq
 }
 
 func (AWSRDSClusterInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	instanceType := filterValue(req, "instanceType")
 	engine := filterValue(req, "databaseEngine")
-	return []output.CostComponent{{
-		Name:        fmt.Sprintf("Aurora %s %s", engine, instanceType),
-		Unit:        "HOUR",
-		HourlyCost:  price.USD,
-		MonthlyCost: awsHourlyToMonthly(price.USD),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsSimpleCost(fmt.Sprintf("Aurora %s %s", engine, instanceType), raw)
 }

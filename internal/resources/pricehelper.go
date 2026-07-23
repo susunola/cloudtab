@@ -1,6 +1,9 @@
 package resources
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // hoursPerMonth is the conventional Tencent Cloud billing month (30.4 days).
 // Tencent's own console uses ~730h for POSTPAID monthly estimates.
@@ -85,4 +88,39 @@ func splitByBilling(priceYuan float64, postpaid bool) (monthly, hourly float64) 
 		return priceYuan * hoursPerMonth, priceYuan
 	}
 	return priceYuan, 0
+}
+
+// tencentSimplePrice is the common price shape returned by many Tencent Cloud
+// DescribePrice / InquiryPrice* APIs: a discounted Price and an OriginalPrice,
+// both in 分, plus a Currency string.
+type tencentSimplePrice struct {
+	Price    float64 `json:"Price"`
+	Original float64 `json:"OriginalPrice"`
+	Currency string  `json:"Currency"`
+}
+
+// parseTencentPrice unmarshals a raw Tencent Cloud pricing response into a
+// tencentSimplePrice. The Tencent SDK wraps the real payload under a "Response"
+// key; this helper prefers the nested version when populated and falls back to
+// the top-level fields (used by test mocks). Currency defaults to "CNY" when
+// absent.
+func parseTencentPrice(raw []byte) (tencentSimplePrice, error) {
+	var wrap struct {
+		tencentSimplePrice
+		Response tencentSimplePrice `json:"Response"`
+	}
+	if err := json.Unmarshal(raw, &wrap); err != nil {
+		return tencentSimplePrice{}, err
+	}
+	p := wrap.tencentSimplePrice
+	if wrap.Response.Price > 0 {
+		p.Price = wrap.Response.Price
+	}
+	if wrap.Response.Currency != "" {
+		p.Currency = wrap.Response.Currency
+	}
+	if p.Currency == "" {
+		p.Currency = "CNY"
+	}
+	return p, nil
 }

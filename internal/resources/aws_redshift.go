@@ -39,25 +39,14 @@ func (AWSRedshiftCluster) Extract(r parser.PlannedResource) (pricing.PriceReques
 }
 
 func (AWSRedshiftCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	nodeType := filterValue(req, "instanceType")
 	nodes := awsQuantity(req)
 	if nodes <= 0 {
 		nodes = 1
 	}
-	hourly := price.USD * float64(nodes)
 	name := fmt.Sprintf("Redshift %s", nodeType)
 	if nodes > 1 {
 		name = fmt.Sprintf("Redshift %s x%d", nodeType, nodes)
 	}
-	return []output.CostComponent{{
-		Name:        name,
-		Unit:        "HOUR",
-		HourlyCost:  hourly,
-		MonthlyCost: awsHourlyToMonthly(hourly),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsScaledCost(name, float64(nodes), raw)
 }

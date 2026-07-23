@@ -44,20 +44,10 @@ func (AWSDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 }
 
 func (AWSDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	instanceType := filterValue(req, "instanceType")
 	engine := filterValue(req, "databaseEngine")
 	deployment := filterValue(req, "deploymentOption")
-	return []output.CostComponent{{
-		Name:        fmt.Sprintf("RDS %s %s (%s)", engine, instanceType, deployment),
-		Unit:        "HOUR",
-		HourlyCost:  price.USD,
-		MonthlyCost: awsHourlyToMonthly(price.USD),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsSimpleCost(fmt.Sprintf("RDS %s %s (%s)", engine, instanceType, deployment), raw)
 }
 
 // awsRDSEngine maps the Terraform `engine` value (lowercase engine IDs like

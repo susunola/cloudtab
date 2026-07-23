@@ -45,25 +45,14 @@ func (AWSOpenSearchDomain) Extract(r parser.PlannedResource) (pricing.PriceReque
 }
 
 func (AWSOpenSearchDomain) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	instanceType := filterValue(req, "instanceType")
 	count := awsQuantity(req)
 	if count <= 0 {
 		count = 1
 	}
-	hourly := price.USD * float64(count)
 	name := fmt.Sprintf("OpenSearch %s", instanceType)
 	if count > 1 {
 		name = fmt.Sprintf("OpenSearch %s x%d", instanceType, count)
 	}
-	return []output.CostComponent{{
-		Name:        name,
-		Unit:        "HOUR",
-		HourlyCost:  hourly,
-		MonthlyCost: awsHourlyToMonthly(hourly),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsScaledCost(name, float64(count), raw)
 }

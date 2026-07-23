@@ -39,19 +39,8 @@ func (AWSInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 }
 
 func (AWSInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	instanceType := filterValue(req, "instanceType")
-	monthly := awsHourlyToMonthly(price.USD)
-	return []output.CostComponent{{
-		Name:        fmt.Sprintf("EC2 %s (Linux, on-demand)", instanceType),
-		Unit:        "HOUR",
-		HourlyCost:  price.USD,
-		MonthlyCost: monthly,
-		Currency:    awsCurrency,
-	}}, nil
+	return awsSimpleCost(fmt.Sprintf("EC2 %s (Linux, on-demand)", instanceType), raw)
 }
 
 // awsTenancy maps the Terraform tenancy value to the Price List "tenancy"

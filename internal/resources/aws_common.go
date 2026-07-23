@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/pricing"
 )
 
@@ -256,6 +257,41 @@ func filterValue(req pricing.PriceRequest, field string) string {
 // monthly run-rates directly comparable in magnitude.
 func awsHourlyToMonthly(hourlyUSD float64) float64 {
 	return hourlyUSD * hoursPerMonth
+}
+
+// awsSimpleCost returns a single on-demand CostComponent for the common
+// hourly-rate AWS services (EC2, RDS, ElastiCache, Redshift, OpenSearch, etc.).
+// Monthly cost = hourly × 730. Use this for the simple "one instance, one
+// hourly SKU" pattern; callers with Quantity scaling should use awsScaledCost.
+func awsSimpleCost(name string, raw []byte) ([]output.CostComponent, error) {
+	price, err := parseAWSPriceList(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []output.CostComponent{{
+		Name:        name,
+		Unit:        "HOUR",
+		HourlyCost:  price.USD,
+		MonthlyCost: awsHourlyToMonthly(price.USD),
+		Currency:    awsCurrency,
+	}}, nil
+}
+
+// awsScaledCost is like awsSimpleCost but multiplies the per-unit hourly rate
+// by count for services where multiple identical nodes run in parallel
+// (ElastiCache cluster nodes, Redshift nodes, OpenSearch data instances).
+func awsScaledCost(name string, count float64, raw []byte) ([]output.CostComponent, error) {
+	price, err := parseAWSPriceList(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []output.CostComponent{{
+		Name:        name,
+		Unit:        "HOUR",
+		HourlyCost:  price.USD * count,
+		MonthlyCost: awsHourlyToMonthly(price.USD) * count,
+		Currency:    awsCurrency,
+	}}, nil
 }
 
 // awsQuantity reads back the Params["Quantity"] a mapper stashed in Extract

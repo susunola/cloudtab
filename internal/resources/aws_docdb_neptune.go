@@ -33,18 +33,8 @@ func awsClusterInstanceRequest(serviceCode, region, instanceType string) pricing
 // awsClusterInstanceComponent turns the pinned hourly rate into one monthly
 // CostComponent labelled with the given engine name.
 func awsClusterInstanceComponent(engineLabel string, req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
-	if err != nil {
-		return nil, err
-	}
 	instanceType := filterValue(req, "instanceType")
-	return []output.CostComponent{{
-		Name:        fmt.Sprintf("%s %s", engineLabel, instanceType),
-		Unit:        "HOUR",
-		HourlyCost:  price.USD,
-		MonthlyCost: awsHourlyToMonthly(price.USD),
-		Currency:    awsCurrency,
-	}}, nil
+	return awsSimpleCost(fmt.Sprintf("%s %s", engineLabel, instanceType), raw)
 }
 
 // AWSDocDBInstance handles `aws_docdb_cluster_instance`.

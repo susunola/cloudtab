@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -73,33 +72,12 @@ func (PostgreSQLInstance) Extract(r parser.PlannedResource) (pricing.PriceReques
 }
 
 func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	var wrap struct {
-		Price         float64 `json:"Price"`
-		OriginalPrice float64 `json:"OriginalPrice"`
-		Currency      string  `json:"Currency"`
-		Response      struct {
-			Price         float64 `json:"Price"`
-			OriginalPrice float64 `json:"OriginalPrice"`
-			Currency      string  `json:"Currency"`
-		} `json:"Response"`
-	}
-	if err := json.Unmarshal(raw, &wrap); err != nil {
+	p, err := parseTencentPrice(raw)
+	if err != nil {
 		return nil, err
 	}
 
-	priceFen := wrap.Price
-	currency := wrap.Currency
-	if wrap.Response.Price > 0 {
-		priceFen = wrap.Response.Price
-	}
-	if wrap.Response.Currency != "" {
-		currency = wrap.Response.Currency
-	}
-	if currency == "" {
-		currency = "CNY"
-	}
-
-	priceYuan := priceFen / 100.0
+	priceYuan := p.Price / 100.0
 	chargeType := fmt.Sprintf("%v", req.Params["InstanceChargeType"])
 	monthly := priceYuan
 	hourly := 0.0
@@ -115,6 +93,6 @@ func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    currency,
+		Currency:    p.Currency,
 	}}, nil
 }
