@@ -416,10 +416,12 @@ func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 		}
 		// Jittered exponential backoff: wait backoff/2 + rand(backoff/2).
 		jitter := backoff/2 + time.Duration(rand.Int63n(int64(backoff/2)))
+		timer := time.NewTimer(jitter)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, fmt.Errorf("pricing retry window expired: %w", ctx.Err())
-		case <-time.After(jitter):
+		case <-timer.C:
 		}
 		if backoff *= 2; backoff > retryMaxBackoff {
 			backoff = retryMaxBackoff
