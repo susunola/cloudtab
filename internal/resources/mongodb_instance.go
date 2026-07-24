@@ -20,7 +20,7 @@ import (
 //   - available_zone, memory (GB), volume (GB), engine_version,
 //     machine_type, charge_type, prepaid_period, node_num
 //
-// Response.Price.{UnitPrice,OriginalPrice,DiscountPrice} is in 元. There is no
+// Response.Price.{UnitPrice,OriginalPrice,DiscountPrice} is in CNY. There is no
 // ChargeUnit field: PREPAID prices are a monthly total, POSTPAID an hourly rate,
 // decided from the charge type in the request.
 type MongoDBInstance struct{}

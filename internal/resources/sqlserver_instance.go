@@ -15,7 +15,7 @@ import (
 // Pricing API (sqlserver): InquiryPriceCreateDBInstances.
 // Docs: https://cloud.tencent.com/document/api/238/19992
 //
-// Response.{OriginalPrice,Price} are int64 in 分 (value/100 = 元). For PREPAID
+// Response.{OriginalPrice,Price} are int64 in cents (value/100 = CNY). For PREPAID
 // the value is the total for the requested Period; for POSTPAID it is an hourly
 // rate. cloudtab always prices a single month (Period=1) so PREPAID == monthly.
 type SQLServerInstance struct{}

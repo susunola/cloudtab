@@ -168,7 +168,7 @@ func TestMySQLExtractAndParseFullPipeline(t *testing.T) {
 		t.Fatalf("MySQL Extract: %v", err)
 	}
 
-	// DescribeDBPrice response (price in 分).
+	// DescribeDBPrice response (price in cents).
 	raw := []byte(`{"Response":{"Price":50000,"Currency":"CNY"}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestMySQLExtractAndParseFullPipeline(t *testing.T) {
 	if len(comps) != 1 {
 		t.Fatalf("components = %d, want 1", len(comps))
 	}
-	// POSTPAID: hourly = 500元(分→元), monthly = 500 * 730
+	// POSTPAID: hourly = 500CNY(cents→CNY), monthly = 500 * 730
 	wantMonthly := 500.0 * hoursPerMonth
 	if comps[0].HourlyCost != 500.0 {
 		t.Errorf("hourly = %v, want 500.0", comps[0].HourlyCost)
@@ -241,7 +241,7 @@ func TestVPNGatewayExtractAndParse(t *testing.T) {
 		t.Fatalf("VPN product/action = %q/%q", req.Product, req.Action)
 	}
 
-	// Response.Price.InstancePrice is in 元; UnitPrice is 元/h for POSTPAID.
+	// Response.Price.InstancePrice is in CNY; UnitPrice is CNY/hour for POSTPAID.
 	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPrice":0.5,"ChargeUnit":"HOUR"}}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -250,7 +250,7 @@ func TestVPNGatewayExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("VPN returned 0 components")
 	}
-	// POSTPAID hourly 0.5元 → monthly 0.5*730.
+	// POSTPAID hourly 0.5CNY → monthly 0.5*730.
 	if comps[0].HourlyCost != 0.5 {
 		t.Errorf("VPN hourly = %v, want 0.5", comps[0].HourlyCost)
 	}
@@ -316,7 +316,7 @@ func TestMongoDBExtractAndParse(t *testing.T) {
 		t.Fatalf("Mongo product/action = %q/%q", req.Product, req.Action)
 	}
 
-	// PREPAID: DiscountPrice is a period (monthly) total in 元.
+	// PREPAID: DiscountPrice is a period (monthly) total in CNY.
 	raw := []byte(`{"Response":{"Price":{"UnitPrice":0,"OriginalPrice":300,"DiscountPrice":250}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -349,7 +349,7 @@ func TestMongoDBPostpaidHourly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mongo Extract: %v", err)
 	}
-	// POSTPAID: UnitPrice is 元/h.
+	// POSTPAID: UnitPrice is CNY/hour.
 	raw := []byte(`{"Response":{"Price":{"UnitPrice":1.2,"DiscountPrice":1.2}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestMariaDBExtractAndParse(t *testing.T) {
 		t.Errorf("Maria Zone = %v, want first of zones list", req.Params["Zone"])
 	}
 
-	// PREPAID DescribePrice returns 分 (period total); 15000分 = 150元.
+	// PREPAID DescribePrice returns cents (period total); 15000cents = 150CNY.
 	raw := []byte(`{"Response":{"Price":15000,"OriginalPrice":20000}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -421,7 +421,7 @@ func TestMariaDBPostpaidHourly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Maria Extract: %v", err)
 	}
-	// POSTPAID: 50分/h = 0.5元/h.
+	// POSTPAID: 50cents/h = 0.5CNY/hour.
 	raw := []byte(`{"Response":{"Price":50}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -461,7 +461,7 @@ func TestCynosDBExtractAndParse(t *testing.T) {
 		t.Fatalf("Cynos product/action = %q/%q", req.Product, req.Action)
 	}
 
-	// PREPAID: TotalPriceDiscount is 分. instance 20000分=200元 + storage 5000分=50元.
+	// PREPAID: TotalPriceDiscount is cents. instance 20000cents=200CNY + storage 5000cents=50CNY.
 	raw := []byte(`{"Response":{"InstancePrice":{"TotalPrice":25000,"TotalPriceDiscount":20000},"StoragePrice":{"TotalPrice":6000,"TotalPriceDiscount":5000}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -494,7 +494,7 @@ func TestCynosDBPostpaidHourly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Cynos Extract: %v", err)
 	}
-	// POSTPAID: UnitPriceDiscount is 分/h. 100分/h = 1元/h.
+	// POSTPAID: UnitPriceDiscount is cents/h. 100cents/h = 1CNY/hour.
 	raw := []byte(`{"Response":{"InstancePrice":{"UnitPrice":120,"UnitPriceDiscount":100}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -594,7 +594,7 @@ func TestLighthouseExtractAndParse(t *testing.T) {
 		t.Errorf("Lighthouse Period = %v, want 1", prepaid)
 	}
 
-	// Price.InstancePrice is a monthly total in 元.
+	// Price.InstancePrice is a monthly total in CNY.
 	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"OriginalPrice":50,"DiscountPrice":45}}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -639,7 +639,7 @@ func TestECMExtractAndParse(t *testing.T) {
 		t.Errorf("ECM SystemDisk = %v, want DiskSize 50", req.Params["SystemDisk"])
 	}
 
-	// InstancePrice is uint64 分; 120分 = 1.2元/h.
+	// InstancePrice is uint64 cents; 120cents = 1.2CNY/hour.
 	raw := []byte(`{"Response":{"InstancePrice":{"OriginalPrice":150,"DiscountPrice":120}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -685,7 +685,7 @@ func TestSQLServerExtractAndParse(t *testing.T) {
 		t.Errorf("SQLServer Period = %v, want 1", req.Params["Period"])
 	}
 
-	// PREPAID: Price is int64 分 (monthly total); 15000分 = 150元.
+	// PREPAID: Price is int64 cents (monthly total); 15000cents = 150CNY.
 	raw := []byte(`{"Response":{"Price":15000,"OriginalPrice":20000}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -718,7 +718,7 @@ func TestSQLServerPostpaidHourly(t *testing.T) {
 	if req.Params["InstanceChargeType"] != "POSTPAID" {
 		t.Errorf("SQLServer charge type = %v, want POSTPAID", req.Params["InstanceChargeType"])
 	}
-	// POSTPAID: 50分/h = 0.5元/h.
+	// POSTPAID: 50cents/h = 0.5CNY/hour.
 	raw := []byte(`{"Response":{"Price":50}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -767,7 +767,7 @@ func TestDCDBExtractAndParse(t *testing.T) {
 		t.Errorf("DCDB Period = %v, want 1 (multi-month must not leak)", req.Params["Period"])
 	}
 
-	// PREPAID: Price is int64 分 (monthly total); 30000分 = 300元.
+	// PREPAID: Price is int64 cents (monthly total); 30000cents = 300CNY.
 	raw := []byte(`{"Response":{"Price":30000,"OriginalPrice":40000}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -801,7 +801,7 @@ func TestDCDBPostpaidHourly(t *testing.T) {
 	if req.Params["Paymode"] != "postpaid" {
 		t.Errorf("DCDB Paymode = %v, want postpaid", req.Params["Paymode"])
 	}
-	// POSTPAID: 60分/h = 0.6元/h.
+	// POSTPAID: 60cents/h = 0.6CNY/hour.
 	raw := []byte(`{"Response":{"Price":60}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -838,7 +838,7 @@ func TestGAAPExtractAndParse(t *testing.T) {
 		t.Fatalf("GAAP product/action = %q/%q", req.Product, req.Action)
 	}
 
-	// Daily price in 元; monthly = daily * (730/24).
+	// Daily price in CNY; monthly = daily * (730/24).
 	raw := []byte(`{"Response":{"ProxyDailyPrice":12,"DiscountProxyDailyPrice":10}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -862,7 +862,7 @@ func TestGAAPConcurrentPassthrough(t *testing.T) {
 			"access_region":     "Guangzhou",
 			"realserver_region": "Beijing",
 			"bandwidth":         10,
-			// Terraform stores concurrent already in units of 万; pass through.
+			// Terraform stores concurrent already in units of 10k; pass through.
 			"concurrent": 5,
 		},
 	}
@@ -961,7 +961,7 @@ func TestDefaultRegistryHasAllTypes(t *testing.T) {
 // ----- mock response helpers -----
 
 // inquiryPriceRunInstancesResp builds a fake CVM InquiryPriceRunInstances response JSON.
-// unitPriceDiscount is 元/h, discountPrice is total discounted price.
+// unitPriceDiscount is CNY/hour, discountPrice is total discounted price.
 func inquiryPriceRunInstancesResp(t *testing.T, chargeUnit string, unitPriceDiscount, discountPrice float64) []byte {
 	t.Helper()
 	type priceInfo struct {

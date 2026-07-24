@@ -13,7 +13,7 @@ const hoursPerMonth = 730.0
 // figure, deciding PREPAID vs POSTPAID from the official ChargeUnit field
 // rather than guessing from OriginalPrice.
 //
-//   - ChargeUnit == "HOUR"  → POSTPAID: unitPriceDiscount is 元/小时, ×730 for monthly.
+//   - ChargeUnit == "HOUR"  → POSTPAID: unitPriceDiscount is CNY/hour, ×730 for monthly.
 //   - ChargeUnit == "MONTH" → PREPAID:  discountPrice is already the monthly total.
 //   - other / empty         → fall back to the POSTPAID hourly assumption; if
 //     discountPrice is set and unitPriceDiscount is 0 we treat it as a fixed price.
@@ -37,7 +37,7 @@ func monthlyFromPrice(chargeUnit string, unitPriceDiscount, discountPrice float6
 	}
 }
 
-// discountedYuanFromCents resolves the standard cents-based (分) DescribePrice
+// discountedYuanFromCents resolves the standard cents-based (cents) DescribePrice
 // response used by the mariadb / sqlserver / dcdb mappers, which all return
 // int64 Price/OriginalPrice both at the top level AND under a nested "Response"
 // wrapper. It encodes the three identical decisions those mappers previously
@@ -47,9 +47,9 @@ func monthlyFromPrice(chargeUnit string, unitPriceDiscount, discountPrice float6
 //     ToJsonString output), else use the top-level pair (test mocks).
 //  2. Discount fallback: prefer the discounted Price; fall back to OriginalPrice
 //     when the API returned no discount (Price == 0).
-//  3. Unit: divide 分 by 100 to get 元.
+//  3. Unit: divide cents by 100 to get CNY.
 //
-// Returns the resolved price in 元.
+// Returns the resolved price in CNY.
 func discountedYuanFromCents(topPrice, topOrig, respPrice, respOrig int64) float64 {
 	price, orig := topPrice, topOrig
 	if respPrice > 0 || respOrig > 0 {
@@ -63,7 +63,7 @@ func discountedYuanFromCents(topPrice, topOrig, respPrice, respOrig int64) float
 
 // preferDiscount returns the discounted price when the API populated it
 // (discount > 0) and falls back to the undiscounted original otherwise. The
-// 元-based mappers (lighthouse / ecm / gaap) share this "prefer discount, fall
+// CNY-based mappers (lighthouse / ecm / gaap) share this "prefer discount, fall
 // back to original" rule; only the surrounding struct shape differs, so each
 // caller selects its own (discount, original) pair first and then applies this.
 func preferDiscount(discount, original float64) float64 {
@@ -73,7 +73,7 @@ func preferDiscount(discount, original float64) float64 {
 	return original
 }
 
-// splitByBilling maps a single per-unit 元 price onto cloudtab's (monthly,
+// splitByBilling maps a single per-unit CNY price onto cloudtab's (monthly,
 // hourly) convention for the DescribePrice-style DB APIs (mariadb / sqlserver /
 // dcdb), whose PREPAID call returns a monthly total (Period forced to 1) while
 // the POSTPAID call returns an hourly rate.
@@ -92,7 +92,7 @@ func splitByBilling(priceYuan float64, postpaid bool) (monthly, hourly float64) 
 
 // tencentSimplePrice is the common price shape returned by many Tencent Cloud
 // DescribePrice / InquiryPrice* APIs: a discounted Price and an OriginalPrice,
-// both in 分, plus a Currency string.
+// both in cents, plus a Currency string.
 type tencentSimplePrice struct {
 	Price    float64 `json:"Price"`
 	Original float64 `json:"OriginalPrice"`
@@ -174,7 +174,7 @@ func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
 
 // huaweiPriceInfo is the common BSS ListOnDemandResourceRatings response shape.
 type huaweiPriceInfo struct {
-	Amount   float64 // amount in 元 (or USD for international)
+	Amount   float64 // amount in CNY (or USD for international)
 	Currency string
 }
 

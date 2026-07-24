@@ -84,7 +84,7 @@ func TestDiscountedYuanFromCents(t *testing.T) {
 		{
 			name:     "top-level discounted price (test-mock shape)",
 			topPrice: 5000, topOrig: 8000,
-			want: 50.0, // 5000分 = 50元, discount preferred
+			want: 50.0, // 5000cents = 50CNY, discount preferred
 		},
 		{
 			name:     "top-level falls back to original when price is 0",

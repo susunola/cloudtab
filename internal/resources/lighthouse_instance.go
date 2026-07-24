@@ -18,7 +18,7 @@ import (
 //
 // Lighthouse is a prepaid, bundle-priced product: you buy a BundleId for a
 // number of months. Response.Price.InstancePrice.{OriginalPrice,DiscountPrice}
-// is in 元 and is the total for the requested Period. cloudtab always prices a
+// is in CNY and is the total for the requested Period. cloudtab always prices a
 // single month (Period=1) so the returned price is the monthly run-rate.
 type LighthouseInstance struct{}
 
@@ -78,7 +78,7 @@ func (LighthouseInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		ip = wrap.Response.Price.InstancePrice
 	}
 
-	// Prefer the discounted price; fall back to the original (already 元/month).
+	// Prefer the discounted price; fall back to the original (already CNY/month).
 	monthly := preferDiscount(ip.DiscountPrice, ip.OriginalPrice)
 
 	return []output.CostComponent{{

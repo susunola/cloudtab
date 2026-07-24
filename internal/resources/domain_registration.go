@@ -26,13 +26,13 @@ const monthsPerYear = 12.0
 // the resource's TLD, then divide by 12 to express a comparable monthly figure.
 //
 // IMPORTANT — pricing unit: the SDK types Price/RealPrice as uint64 but the API
-// docs and struct comments (域名原价/域名现价) do NOT state a unit. Empirically
-// this endpoint returns whole-yuan (元) integers (e.g. 55 for a ¥55/year .com),
-// NOT cents. We therefore treat the value as 元 directly. If a future SDK/API
-// revision switches to 分, change domainPriceUnitDivisor to 100.0.
+// docs and struct comments (domain list price/domain current price) do NOT state a unit. Empirically
+// this endpoint returns whole-yuan (CNY) integers (e.g. 55 for a ¥55/year .com),
+// NOT cents. We therefore treat the value as CNY directly. If a future SDK/API
+// revision switches to cents, change domainPriceUnitDivisor to 100.0.
 type DomainRegistration struct{}
 
-// domainPriceUnitDivisor converts the raw integer Price/RealPrice to 元.
+// domainPriceUnitDivisor converts the raw integer Price/RealPrice to CNY.
 // The domain API reports whole-yuan integers, so the divisor is 1.
 const domainPriceUnitDivisor = 1.0
 
@@ -82,8 +82,8 @@ func (DomainRegistration) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 	type priceInfo struct {
 		Tld       string `json:"Tld"`
 		Year      uint64 `json:"Year"`
-		Price     uint64 `json:"Price"`     // list price, 分
-		RealPrice uint64 `json:"RealPrice"` // current price, 分
+		Price     uint64 `json:"Price"`     // list price, cents
+		RealPrice uint64 `json:"RealPrice"` // current price, cents
 		Operation string `json:"Operation"`
 	}
 	type priceBlock struct {
@@ -117,7 +117,7 @@ func (DomainRegistration) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 	}
 
 	// Prefer the discounted RealPrice; fall back to the list Price. The raw
-	// value is a per-year fee in 元 (see domainPriceUnitDivisor): divide by 12
+	// value is a per-year fee in CNY (see domainPriceUnitDivisor): divide by 12
 	// for a comparable monthly run-rate.
 	priceInt := chosen.RealPrice
 	if priceInt == 0 {

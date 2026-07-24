@@ -16,7 +16,7 @@ import (
 // Docs: https://cloud.tencent.com/document/api/608/37569
 //
 // GAAP quotes a DAILY proxy price. Response.{ProxyDailyPrice,
-// DiscountProxyDailyPrice} are float64 in 元/day. We convert to a monthly
+// DiscountProxyDailyPrice} are float64 in CNY/day. We convert to a monthly
 // run-rate with the shared 730h month (≈30.4 days). BillingType is an int:
 // 0 = by bandwidth, 1 = by flow.
 type GAAPProxy struct{}
@@ -33,7 +33,7 @@ func (GAAPProxy) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 	}
 	bandwidth := getInt(r.After, "bandwidth")
 	// The Terraform tencentcloud_gaap_proxy schema already stores `concurrent`
-	// in units of 万 (10k connections), which is exactly what the API expects,
+	// in units of 10k (10k connections), which is exactly what the API expects,
 	// so we pass it through unchanged — no scaling heuristics.
 	concurrent := getInt(r.After, "concurrent")
 	if accessRegion == "" || realServerRegion == "" || bandwidth <= 0 || concurrent <= 0 {

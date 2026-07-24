@@ -17,7 +17,7 @@ import (
 //
 // InstanceChargeType is an int enum: 0 = resource-postpaid, 1 = hourly-postpaid,
 // 2 = monthly-postpaid. ECM has no PREPAID mode. Response.InstancePrice.
-// {OriginalPrice,DiscountPrice} are uint64 in 分 (value/100 = 元); the value is
+// {OriginalPrice,DiscountPrice} are uint64 in cents (value/100 = CNY); the value is
 // an hourly rate for the hourly charge types.
 type ECMInstance struct{}
 
@@ -79,7 +79,7 @@ func (ECMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		ip = wrap.Response.InstancePrice
 	}
 
-	// Prefer the discounted price; fall back to the original. Values are 分.
+	// Prefer the discounted price; fall back to the original. Values are cents.
 	hourly := preferDiscount(float64(ip.DiscountPrice), float64(ip.OriginalPrice)) / 100.0
 
 	return []output.CostComponent{{

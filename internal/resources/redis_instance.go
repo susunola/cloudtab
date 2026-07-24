@@ -149,7 +149,7 @@ func normalizeTencentAmount(price float64, amountUnit string) float64 {
 	case "micropent":
 		return price / 100000000.0
 	default:
-		// Some APIs return 元 directly (or omit AmountUnit). Keep original value.
+		// Some APIs return CNY directly (or omit AmountUnit). Keep original value.
 		return price
 	}
 }

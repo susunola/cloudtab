@@ -58,7 +58,7 @@ func TestDomainExtractRequiresName(t *testing.T) {
 
 func TestDomainParseYearlyToMonthly(t *testing.T) {
 	req := pricing.PriceRequest{Params: map[string]interface{}{}}
-	// Price/RealPrice are whole-yuan (元). RealPrice=96 -> 96 元/year -> /12 = 8 元/mo.
+	// Price/RealPrice are whole-yuan (CNY). RealPrice=96 -> 96 CNY/year -> /12 = 8 CNY/mo.
 	// Picks the "new" entry over the "renew" entry, and prefers RealPrice.
 	raw := []byte(`{"Response":{"PriceList":[
 		{"Tld":"com","Year":1,"Price":120,"RealPrice":110,"Operation":"renew"},
@@ -87,7 +87,7 @@ func TestDomainParseFallbackToListPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	// 24 元/year -> /12 = 2 元/mo.
+	// 24 CNY/year -> /12 = 2 CNY/mo.
 	if !almostEqDomain(comps[0].MonthlyCost, 2.0) {
 		t.Fatalf("monthly = %v, want 2.0", comps[0].MonthlyCost)
 	}

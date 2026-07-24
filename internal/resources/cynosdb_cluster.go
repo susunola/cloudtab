@@ -21,7 +21,7 @@ import (
 //     charge_type (PREPAID | POSTPAID), prepaid_period, instance_count
 //
 // Response has two TradePrice blocks — InstancePrice and StoragePrice — each in
-// 分 (int64). PREPAID uses TotalPriceDiscount (period total); POSTPAID uses
+// cents (int64). PREPAID uses TotalPriceDiscount (period total); POSTPAID uses
 // UnitPriceDiscount (hourly). We sum instance + storage.
 type CynosDBCluster struct{}
 
@@ -86,7 +86,7 @@ func (CynosDBCluster) Extract(r parser.PlannedResource) (pricing.PriceRequest, e
 	}, nil
 }
 
-// cynosTradePrice mirrors cynosdb TradePrice (all amounts in 分, int64).
+// cynosTradePrice mirrors cynosdb TradePrice (all amounts in cents, int64).
 type cynosTradePrice struct {
 	TotalPrice         int64 `json:"TotalPrice"`
 	TotalPriceDiscount int64 `json:"TotalPriceDiscount"`
@@ -130,7 +130,7 @@ func (CynosDBCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 	return comps, nil
 }
 
-// cynosComponent converts one TradePrice block (分) into a CostComponent.
+// cynosComponent converts one TradePrice block (cents) into a CostComponent.
 // For POSTPAID the discounted unit price is an hourly rate; for PREPAID the
 // discounted total is a period total treated as the monthly figure.
 func cynosComponent(name string, tp cynosTradePrice, postpaid bool) output.CostComponent {

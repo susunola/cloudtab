@@ -9,7 +9,7 @@ import (
 	"github.com/susunola/cloudtab/internal/pricing"
 )
 
-// CloudHSMInstance handles `tencentcloud_cloudhsm_instance` (Cloud HSM / 云加密机
+// CloudHSMInstance handles `tencentcloud_cloudhsm_instance` (Cloud HSM / Cloud HSM
 // VSM).
 //
 // Pricing API (cloudhsm): InquiryPriceBuyVsm (Inquiry, with 'y').
@@ -18,7 +18,7 @@ import (
 // The request takes GoodsNum/PayMode/TimeSpan/TimeUnit. cloudhsm supports a
 // prepaid mode (PayMode=1) billed by month; cloudtab always prices a single
 // month (TimeSpan=1, TimeUnit="m") so the returned total is the monthly
-// run-rate. Response.{OriginalCost,TotalCost} are float64 in 元 (TotalCost is
+// run-rate. Response.{OriginalCost,TotalCost} are float64 in CNY (TotalCost is
 // the discounted/payable amount, OriginalCost the list price). Currency is
 // echoed from the request (default CNY).
 type CloudHSMInstance struct{}
@@ -50,7 +50,7 @@ func (CloudHSMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest,
 func (CloudHSMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
 	type priceBlock struct {
 		// TotalCost is the payable (discounted) amount; OriginalCost the list
-		// price. Both are 元. Pointers so we can distinguish absent from zero.
+		// price. Both are CNY. Pointers so we can distinguish absent from zero.
 		TotalCost    *float64 `json:"TotalCost"`
 		OriginalCost *float64 `json:"OriginalCost"`
 	}
@@ -69,7 +69,7 @@ func (CloudHSMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Co
 		pb = wrap.Response.priceBlock
 	}
 
-	// Prefer the payable TotalCost; fall back to OriginalCost. Values are 元/month.
+	// Prefer the payable TotalCost; fall back to OriginalCost. Values are CNY/month.
 	monthly := 0.0
 	if pb.TotalCost != nil && *pb.TotalCost > 0 {
 		monthly = *pb.TotalCost

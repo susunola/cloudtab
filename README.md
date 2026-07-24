@@ -14,8 +14,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="docs/usage.md">Usage guide</a> ·
-  <a href="docs/design.md">Design</a> ·
+  <a href="docs/cloudtab-architecture.html">Architecture</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
 
@@ -285,7 +284,7 @@ plan.json ─► parser ─► mapper (per resource type) ─► pricing engine 
                                                              table / JSON / markdown
 ```
 
-Full architecture in [`docs/design.md`](docs/design.md) and the [visual architecture](docs/cloudtab-architecture.html).
+Full architecture in the [visual architecture diagram](docs/cloudtab-architecture.html).
 
 ## Roadmap
 

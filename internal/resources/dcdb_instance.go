@@ -16,7 +16,7 @@ import (
 // Docs: https://cloud.tencent.com/document/api/557/16135
 //
 // We request AmountUnit="pent" so Response.{OriginalPrice,Price} come back as
-// int64 分 (value/100 = 元). Paymode is the lowercase "prepaid"/"postpaid".
+// int64 cents (value/100 = CNY). Paymode is the lowercase "prepaid"/"postpaid".
 // For PREPAID the value is the total for the requested Period; for POSTPAID it
 // is an hourly rate. cloudtab always prices a single month (Period=1).
 type DCDBInstance struct{}
@@ -64,7 +64,7 @@ func (DCDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 		"ShardStorage":   shardStorage,
 		"ShardCount":     shardCount,
 		"Paymode":        payMode,
-		"AmountUnit":     "pent", // return price in 分 for a stable integer unit
+		"AmountUnit":     "pent", // return price in cents for a stable integer unit
 		// Always price a single month; cloudtab reports a monthly run-rate.
 		"Period": 1,
 	}

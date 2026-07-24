@@ -30,10 +30,12 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-export GOROOT=/Users/atom/sdk/go1.25.12
-export GOPATH=/Users/atom/.workbuddy/binaries/go/gopath
-export GOMODCACHE=/Users/atom/.workbuddy/binaries/go/gopath/pkg/mod
-export PATH=$GOROOT/bin:$PATH
+# Use the ambient Go toolchain. GOROOT/GOPATH/GOMODCACHE are only overridden
+# if you export them yourself; otherwise `go` resolves its own defaults.
+if ! command -v go >/dev/null 2>&1; then
+  echo "ERROR: 'go' not found in PATH. Install Go 1.25+ and retry." >&2
+  exit 1
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$(mktemp -d)"

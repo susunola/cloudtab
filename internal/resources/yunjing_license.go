@@ -11,7 +11,7 @@ import (
 )
 
 // YunjingLicense handles `tencentcloud_cwp_license_order` (Cloud Workload
-// Protection / 主机安全 professional-version license).
+// Protection / Host Security professional-version license).
 //
 // Pricing API (yunjing): InquiryPriceOpenProVersionPrepaid (Inquiry, with 'y').
 // Docs: https://cloud.tencent.com/document/api/296/19836
@@ -19,7 +19,7 @@ import (
 // The professional version is a prepaid, per-machine license. The request takes
 // a ChargePrepaid{Period,RenewFlag} block plus a Machines list; cloudtab always
 // prices a single month (Period=1) so the returned total is the monthly
-// run-rate. Response.{OriginalPrice,DiscountPrice} are float64 in 元 for the
+// run-rate. Response.{OriginalPrice,DiscountPrice} are float64 in CNY for the
 // whole requested period (no per-instance currency field; CNY is implied).
 type YunjingLicense struct{}
 
@@ -80,7 +80,7 @@ func (YunjingLicense) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 		pb = wrap.Response.priceBlock
 	}
 
-	// Prefer the discounted price; fall back to the original (already 元/month).
+	// Prefer the discounted price; fall back to the original (already CNY/month).
 	monthly := preferDiscount(pb.DiscountPrice, pb.OriginalPrice)
 
 	n := len(req.Params["Machines"].([]interface{}))

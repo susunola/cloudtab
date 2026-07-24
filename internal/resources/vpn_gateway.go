@@ -19,7 +19,7 @@ import (
 //   - bandwidth (Mbps), charge_type (PREPAID | POSTPAID_BY_HOUR),
 //     prepaid_period, type (IPSEC | SSL), max_connection (SSL only)
 //
-// Response.Price.InstancePrice.{UnitPrice,DiscountPrice,ChargeUnit} is in 元.
+// Response.Price.InstancePrice.{UnitPrice,DiscountPrice,ChargeUnit} is in CNY.
 type VPNGateway struct{}
 
 func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
@@ -76,7 +76,7 @@ func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 }
 
 func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	// itemPrice mirrors vpc ItemPrice (元). UnitPrice is 元/h for POSTPAID.
+	// itemPrice mirrors vpc ItemPrice (CNY). UnitPrice is CNY/hour for POSTPAID.
 	type itemPrice struct {
 		UnitPrice     float64 `json:"UnitPrice"`
 		OriginalPrice float64 `json:"OriginalPrice"`

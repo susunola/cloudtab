@@ -21,10 +21,10 @@
     { "id": "cache",     "type": "database", "label": "BoltDB cache",           "sublabel": "sha256(req) → resp, 24h TTL",        "pos": [570, 320], "size": [220, 60] },
     { "id": "output",    "type": "backend",  "label": "internal/output",       "sublabel": "table / json / diff",                "pos": [570, 480], "size": [220, 60] },
 
-    { "id": "cvm_api",   "type": "cloud",    "label": "cvm InquiryPrice…",     "sublabel": "CVM 云服务器",                       "pos": [870, 120], "size": [280, 56] },
-    { "id": "cbs_api",   "type": "cloud",    "label": "cbs InquiryPrice…",     "sublabel": "CBS 云硬盘",                         "pos": [870, 190], "size": [280, 56] },
+    { "id": "cvm_api",   "type": "cloud",    "label": "cvm InquiryPrice…",     "sublabel": "CVM (compute)",                       "pos": [870, 120], "size": [280, 56] },
+    { "id": "cbs_api",   "type": "cloud",    "label": "cbs InquiryPrice…",     "sublabel": "CBS (block storage)",                         "pos": [870, 190], "size": [280, 56] },
     { "id": "cdb_api",   "type": "cloud",    "label": "cdb InquiryPrice…",     "sublabel": "TencentDB MySQL",                    "pos": [870, 260], "size": [280, 56] },
-    { "id": "clb_api",   "type": "cloud",    "label": "clb InquiryPrice…",     "sublabel": "CLB 负载均衡",                       "pos": [870, 330], "size": [280, 56] },
+    { "id": "clb_api",   "type": "cloud",    "label": "clb InquiryPrice…",     "sublabel": "CLB (load balancer)",                       "pos": [870, 330], "size": [280, 56] },
     { "id": "redis_api", "type": "cloud",    "label": "redis InquiryPrice…",   "sublabel": "TencentDB Redis",                    "pos": [870, 400], "size": [280, 56] },
     { "id": "static",    "type": "cloud",    "label": "Static tables",         "sublabel": "COS / CDN / SCF (no inquiry API)",    "pos": [870, 470], "size": [280, 56] }
   ],

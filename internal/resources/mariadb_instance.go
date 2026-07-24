@@ -19,8 +19,8 @@ import (
 //   - zones (first used as Zone), node_count, memory (GB), storage (GB),
 //     period (months), instance_charge_type / charge_type
 //
-// Response.{Price,OriginalPrice} are int64 in 分 (cents). We request
-// AmountUnit="pent" for an explicit unit and divide by 100 to get 元. The
+// Response.{Price,OriginalPrice} are int64 in cents (cents). We request
+// AmountUnit="pent" for an explicit unit and divide by 100 to get CNY. The
 // returned figure is the total for the requested Period, so PREPAID is a
 // period total and POSTPAID is an hourly rate.
 type MariaDBInstance struct{}
@@ -69,7 +69,7 @@ func (MariaDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 		"Period":     1,
 		"Count":      count,
 		"Paymode":    payMode,
-		"AmountUnit": "pent", // return price in 分 for a stable integer unit
+		"AmountUnit": "pent", // return price in cents for a stable integer unit
 	}
 
 	return pricing.PriceRequest{

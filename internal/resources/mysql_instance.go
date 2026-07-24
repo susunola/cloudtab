@@ -25,7 +25,7 @@ import (
 // Design decision — hourly → monthly conversion:
 // Unlike CVM/CBS/CLB which return InquiryPrice* responses with a ChargeUnit field
 // (handled by monthlyFromPrice), the CDB DescribeDBPrice response does NOT include
-// a ChargeUnit. The Price field is always in 元/小时 for HOUR_PAID and 元/月 for
+// a ChargeUnit. The Price field is always in CNY/hour for HOUR_PAID and CNY/month for
 // PRE_PAID. Since we cannot use monthlyFromPrice here (no ChargeUnit), we multiply
 // by hoursPerMonth (=730) directly for POSTPAID instances. This is intentional and
 // matches Tencent Cloud console behavior.
