@@ -284,12 +284,6 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 		concurrency = n
 	}
 
-	type result struct {
-		cost *output.ResourceCost
-		skip *output.SkippedResource
-		err  error
-	}
-
 	jobs := make(chan parser.PlannedResource, len(plan.Resources))
 	results := make(chan result, len(plan.Resources))
 	var wg sync.WaitGroup
@@ -299,12 +293,7 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 		go func() {
 			defer wg.Done()
 			for r := range jobs {
-				cost, skip, err := priceResource(engine, registry, r, failOnError)
-				if err != nil {
-					results <- result{err: fmt.Errorf("%s: %w", r.Address, err)}
-					continue
-				}
-				results <- result{cost: cost, skip: skip}
+				results <- priceJob(engine, registry, r, failOnError)
 			}
 		}()
 	}
@@ -343,6 +332,41 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 		return rep, errors.Join(pricingErrs...)
 	}
 	return rep, nil
+}
+
+// result is the outcome of pricing one resource: exactly one of cost/skip is
+// set on success, or err is set on failure.
+type result struct {
+	cost *output.ResourceCost
+	skip *output.SkippedResource
+	err  error
+}
+
+// priceJob prices a single resource and recovers from any panic in a mapper's
+// Extract/Parse, so one malformed resource cannot crash the whole run. A panic
+// is treated like a pricing error: under failOnError it fails the report,
+// otherwise it degrades to a SkippedResource — matching priceResource's
+// error-handling contract.
+func priceJob(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, failOnError bool) (res result) {
+	defer func() {
+		if p := recover(); p != nil {
+			err := fmt.Errorf("panic pricing %s: %v", r.Address, p)
+			if failOnError {
+				res = result{err: err}
+			} else {
+				res = result{skip: &output.SkippedResource{
+					Address: r.Address,
+					Type:    r.Type,
+					Reason:  err.Error(),
+				}}
+			}
+		}
+	}()
+	cost, skip, err := priceResource(engine, registry, r, failOnError)
+	if err != nil {
+		return result{err: fmt.Errorf("%s: %w", r.Address, err)}
+	}
+	return result{cost: cost, skip: skip}
 }
 
 // priceResource prices a single planned resource, returning either a cost line

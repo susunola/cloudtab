@@ -31,6 +31,11 @@ type Registry struct {
 	m map[string]Mapper
 }
 
+// NewRegistry returns an empty Registry. Use Register to add mappers. Most
+// callers want DefaultRegistry (pre-loaded with all supported types); this is
+// for building a custom or test-only registry.
+func NewRegistry() *Registry { return &Registry{m: map[string]Mapper{}} }
+
 func (r *Registry) Register(tfType string, m Mapper) { r.m[tfType] = m }
 func (r *Registry) Lookup(tfType string) (Mapper, bool) {
 	m, ok := r.m[tfType]
@@ -46,7 +51,7 @@ var defaultRegistryInstance *Registry
 // resource types. It is safe for concurrent use.
 func DefaultRegistry() *Registry {
 	defaultRegistryOnce.Do(func() {
-		r := &Registry{m: map[string]Mapper{}}
+		r := NewRegistry()
 		r.Register("tencentcloud_instance", &CVMInstance{})
 		r.Register("tencentcloud_cbs_storage", &CBSStorage{})
 		r.Register("tencentcloud_eip", &EIP{})

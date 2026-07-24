@@ -5,8 +5,49 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
+	"github.com/susunola/cloudtab/internal/pricing"
+	"github.com/susunola/cloudtab/internal/resources"
 )
+
+// panicMapper is a StaticMapper whose Estimate always panics, used to prove a
+// misbehaving mapper cannot crash the whole pricing run.
+type panicMapper struct{}
+
+func (panicMapper) Extract(parser.PlannedResource) (pricing.PriceRequest, error) {
+	return pricing.PriceRequest{}, nil
+}
+func (panicMapper) Parse(pricing.PriceRequest, []byte) ([]output.CostComponent, error) {
+	return nil, nil
+}
+func (panicMapper) Estimate(parser.PlannedResource) ([]output.CostComponent, error) {
+	panic("boom: simulated mapper panic")
+}
+
+func TestPriceJobRecoversFromPanic(t *testing.T) {
+	reg := resources.NewRegistry()
+	reg.Register("panic_resource", panicMapper{})
+	r := parser.PlannedResource{Address: "panic_resource.x", Type: "panic_resource"}
+
+	// failOnError=false: a panic must degrade to a SkippedResource, not crash.
+	got := priceJob(nil, reg, r, false)
+	if got.err != nil {
+		t.Fatalf("failOnError=false: got err %v, want nil (should soft-skip)", got.err)
+	}
+	if got.skip == nil {
+		t.Fatal("failOnError=false: expected a SkippedResource, got none")
+	}
+	if got.skip.Address != r.Address {
+		t.Errorf("skip.Address = %q, want %q", got.skip.Address, r.Address)
+	}
+
+	// failOnError=true: a panic must surface as an error, still no crash.
+	got = priceJob(nil, reg, r, true)
+	if got.err == nil {
+		t.Fatal("failOnError=true: expected an error, got nil")
+	}
+}
 
 func TestMergeUsageIntoAfter(t *testing.T) {
 	orig := parser.PlannedResource{

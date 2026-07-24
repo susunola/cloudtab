@@ -14,12 +14,12 @@ import (
 type HuaweiRDS struct{}
 
 func (HuaweiRDS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
+	// The RDS flavor (e.g. "rds.mysql.c2.large") already encodes the engine, so
+	// the DB engine type is not a separate pricing input here.
 	flavor := strings.TrimSpace(getStr(r.After, "flavor"))
 	if flavor == "" {
 		flavor = "rds.mysql.c2.large"
 	}
-	// Default db type is "MySQL" when absent from plan.
-	_ = getStr(r.After, "db.0.type")
 
 	return pricing.PriceRequest{
 		Provider: "huawei",

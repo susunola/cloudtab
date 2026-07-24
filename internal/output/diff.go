@@ -147,11 +147,18 @@ func renderDiffTable(w io.Writer, d DiffReport) error {
 			fmt.Sprintf("%+.2f", r.DeltaMonthly),
 		})
 	}
-	t.SetFooter([]string{"", "TOTAL", "",
-		fmt.Sprintf("%.2f", d.BeforeTotal),
-		fmt.Sprintf("%.2f", d.AfterTotal),
-		fmt.Sprintf("%+.2f", d.DeltaTotal),
-	})
+	// Only sum into a single TOTAL when every priced component shares one
+	// currency; mixing e.g. CNY + USD would produce a meaningless figure, so we
+	// show a dash instead (matching the non-diff renderTable behavior).
+	if d.Currency == "" {
+		t.SetFooter([]string{"", "TOTAL (mixed currencies)", "", "-", "-", "-"})
+	} else {
+		t.SetFooter([]string{"", "TOTAL", "",
+			fmt.Sprintf("%.2f", d.BeforeTotal),
+			fmt.Sprintf("%.2f", d.AfterTotal),
+			fmt.Sprintf("%+.2f", d.DeltaTotal),
+		})
+	}
 	t.Render()
 	if len(d.Skipped) > 0 {
 		fmt.Fprintln(w, "\nSkipped resources:")

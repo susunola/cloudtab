@@ -1,9 +1,51 @@
 package output
 
 import (
+	"bytes"
 	"math"
+	"strings"
 	"testing"
 )
+
+func rcCur(addr, typ, currency string, monthly float64) ResourceCost {
+	return ResourceCost{
+		Address: addr,
+		Type:    typ,
+		Components: []CostComponent{
+			{Name: "compute", MonthlyCost: monthly, Currency: currency},
+		},
+	}
+}
+
+// A diff spanning two currencies must NOT sum incomparable amounts into a single
+// TOTAL; the table footer shows a dash and flags the mix instead.
+func TestRenderDiffTableMixedCurrency(t *testing.T) {
+	before := Report{Resources: []ResourceCost{
+		rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100),
+	}}
+	after := Report{Resources: []ResourceCost{
+		rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100),
+		rcCur("aws_instance.b", "aws_instance", "USD", 20),
+	}}
+	d := ComputeDiff(before, after)
+	if d.Currency != "" {
+		t.Fatalf("Currency = %q, want empty (mixed)", d.Currency)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderDiff(&buf, d, "table"); err != nil {
+		t.Fatalf("RenderDiff: %v", err)
+	}
+	// tablewriter uppercases footer text, so match case-insensitively.
+	out := buf.String()
+	if !strings.Contains(strings.ToLower(out), "mixed currencies") {
+		t.Errorf("table footer should flag mixed currencies, got:\n%s", out)
+	}
+	// The USD amount (20) and CNY amount (100) must not be summed into 120.
+	if strings.Contains(out, "120.00") {
+		t.Errorf("mixed-currency amounts were summed (found 120.00):\n%s", out)
+	}
+}
 
 func rc(addr, typ string, monthly float64) ResourceCost {
 	return ResourceCost{
