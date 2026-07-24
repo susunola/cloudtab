@@ -88,8 +88,8 @@ runs:
             cloudtab diff --before plan.old.json --after plan.new.json \
               --region "${{ inputs.region }}" --format markdown > comment.md
           else
-            cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" --format json \
-              | cloudtab-mdfmt > comment.md || cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
+            # No baseline plan (e.g. first run): fall back to a plain breakdown.
+            cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
           fi
         else
           cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md

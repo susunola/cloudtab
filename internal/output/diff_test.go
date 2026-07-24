@@ -76,6 +76,41 @@ func TestRenderDiffMarkdownMixedCurrency(t *testing.T) {
 	}
 }
 
+// The markdown skipped section must surface each resource's real skip reason
+// (grouped by reason), never a blanket hardcoded "unsupported type" — a skip
+// can be an auth failure, API error, parse failure, or panic.
+func TestRenderDiffMarkdownSkippedReasons(t *testing.T) {
+	before := Report{
+		Skipped: []SkippedResource{
+			{Address: "tencentcloud_instance.auth", Type: "tencentcloud_instance", Reason: "query x: AuthFailure: invalid secret id"},
+			{Address: "aws_instance.unsup", Type: "aws_instance", Reason: "unsupported resource type"},
+		},
+	}
+	after := Report{
+		Skipped: []SkippedResource{
+			{Address: "tencentcloud_instance.auth", Type: "tencentcloud_instance", Reason: "query x: AuthFailure: invalid secret id"},
+			{Address: "aws_instance.unsup", Type: "aws_instance", Reason: "unsupported resource type"},
+			{Address: "tencentcloud_cbs_storage.panic", Type: "tencentcloud_cbs_storage", Reason: "panic pricing tencentcloud_cbs_storage.x: boom"},
+		},
+	}
+	d := ComputeDiff(before, after)
+
+	var buf bytes.Buffer
+	if err := RenderDiff(&buf, d, "markdown"); err != nil {
+		t.Fatalf("RenderDiff: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("markdown should surface reason %q, got:\n%s", want, out)
+		}
+	}
+	// The old blanket hardcoded label must be gone.
+	if strings.Contains(out, "skipped (unsupported type)") {
+		t.Errorf("markdown still uses the hardcoded unsupported-type label:\n%s", out)
+	}
+}
+
 func rc(addr, typ string, monthly float64) ResourceCost {
 	return ResourceCost{
 		Address: addr,

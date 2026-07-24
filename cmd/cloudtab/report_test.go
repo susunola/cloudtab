@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/susunola/cloudtab/internal/parser"
@@ -101,6 +102,34 @@ func TestPriceReportDrainsManyResults(t *testing.T) {
 	}
 	if len(rep.Resources) != 0 {
 		t.Fatalf("priced = %d, want 0", len(rep.Resources))
+	}
+}
+
+// TestPriceReportSortsSkipped verifies the concurrently-collected results are
+// sorted by address before rendering, so repeated runs of the same plan
+// produce deterministic table/JSON output (CI diffs stay quiet).
+func TestPriceReportSortsSkipped(t *testing.T) {
+	engine, err := pricing.NewEngine(pricing.Config{
+		SecretID: "id", SecretKey: "key", Region: "ap-guangzhou", NoCache: true,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer engine.Close()
+
+	const n = 50 // > worker count, so completion order would otherwise vary
+	path := writeManyUnsupportedPlan(t, n)
+	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 8, false)
+	if err != nil {
+		t.Fatalf("priceReport error: %v", err)
+	}
+	if len(rep.Skipped) != n {
+		t.Fatalf("skipped = %d, want %d", len(rep.Skipped), n)
+	}
+	if !sort.SliceIsSorted(rep.Skipped, func(i, j int) bool {
+		return rep.Skipped[i].Address < rep.Skipped[j].Address
+	}) {
+		t.Fatalf("skipped not sorted by address")
 	}
 }
 

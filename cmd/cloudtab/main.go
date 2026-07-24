@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -327,6 +328,16 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 			rep.Skipped = append(rep.Skipped, *res.skip)
 		}
 	}
+
+	// Concurrent collection arrives in completion order, which varies run to
+	// run. Sort by address so repeated runs of the same plan yield identical
+	// table/JSON output (matching ComputeDiff) and CI diffs stay quiet.
+	sort.Slice(rep.Resources, func(i, j int) bool {
+		return rep.Resources[i].Address < rep.Resources[j].Address
+	})
+	sort.Slice(rep.Skipped, func(i, j int) bool {
+		return rep.Skipped[i].Address < rep.Skipped[j].Address
+	})
 
 	if len(pricingErrs) > 0 {
 		return rep, errors.Join(pricingErrs...)

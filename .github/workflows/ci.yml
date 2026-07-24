@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - name: Vet
         run: go vet ./...
@@ -23,21 +23,6 @@ jobs:
       - name: Test
         run: go test -race ./...
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# Releases are cut manually via scripts/release.sh (builds darwin/linux ×
+# amd64/arm64 and publishes to GitHub Releases). There is intentionally no
+# tag-triggered release job here.

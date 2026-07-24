@@ -183,6 +183,35 @@ single-month period, matching the convention already used by the other mappers
   suppressed.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.5" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.5 — Output correctness + CI/repo hygiene
+
+Patch release from a review round: two small output fixes plus CI/repo cleanup.
+
+### Output fixes
+- **diff markdown skipped section** now groups resources by their real skip
+  reason (unsupported type / auth failure / API error / parse failure / panic)
+  instead of a blanket hardcoded "unsupported type" that mislabeled transient
+  errors in PR comments.
+- **breakdown output is now deterministic**: concurrently-collected resources
+  and skips are sorted by address before rendering, so repeated runs of the
+  same plan produce identical table/JSON (CI diffs stay quiet). Aligns with the
+  diff path, which was already sorted.
+
+### CI / repo hygiene
+- CI Go toolchain unified to **1.25** (was 1.22 while go.mod declares 1.25.0 —
+  it only passed before because GOTOOLCHAIN auto-downloaded 1.25).
+- Removed the dead goreleaser release job + `.goreleaser.yaml` (the workflow
+  only triggers on main-branch pushes, so the tag job could never run; releases
+  are cut via `scripts/release.sh`).
+- GitHub Action no longer pipes through the non-existent `cloudtab-mdfmt`
+  (logged "command not found" every run, saved only by an `||` fallback).
+
+### Tests
+- New: markdown skipped-reason grouping; deterministic skipped ordering.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

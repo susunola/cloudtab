@@ -194,12 +194,28 @@ func renderDiffMarkdown(w io.Writer, d DiffReport) error {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "> Priced via provider-specific pricing APIs (Tencent InquiryPrice / AWS Price List / Alibaba BSS / Huawei BSS).")
 	if len(d.Skipped) > 0 {
-		addrs := make([]string, len(d.Skipped))
-		for i, s := range d.Skipped {
-			addrs[i] = s.Address
+		// Group skipped addresses by their real reason (unsupported type, auth
+		// failure, API error, parse failure, panic, ...) so the PR comment never
+		// mislabels a transient error as "unsupported type".
+		byReason := map[string][]string{}
+		reasons := []string{}
+		for _, s := range d.Skipped {
+			reason := s.Reason
+			if reason == "" {
+				reason = "unknown"
+			}
+			if _, ok := byReason[reason]; !ok {
+				reasons = append(reasons, reason)
+			}
+			byReason[reason] = append(byReason[reason], s.Address)
 		}
-		fmt.Fprintf(w, "\n> ⚠️ %d resource(s) skipped (unsupported type): `%s`\n",
-			len(d.Skipped), strings.Join(addrs, "`, `"))
+		sort.Strings(reasons)
+		fmt.Fprintf(w, "\n> ⚠️ %d resource(s) skipped:\n", len(d.Skipped))
+		for _, reason := range reasons {
+			addrs := byReason[reason]
+			sort.Strings(addrs)
+			fmt.Fprintf(w, ">   - **%s** (%d): `%s`\n", reason, len(addrs), strings.Join(addrs, "`, `"))
+		}
 	}
 	return nil
 }
