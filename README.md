@@ -21,7 +21,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-alpha-orange"/>
-  <img src="https://img.shields.io/badge/go-1.22+-00ADD8?logo=go"/>
+  <img src="https://img.shields.io/badge/go-1.25+-00ADD8?logo=go"/>
   <img src="https://img.shields.io/badge/license-MIT-blue"/>
 </p>
 
