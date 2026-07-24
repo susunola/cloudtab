@@ -79,7 +79,7 @@ func DefaultRegistry() *Registry {
 		r.Register("huaweicloud_dds_instance", &HuaweiDDS{})
 		r.Register("huaweicloud_cce_cluster", &HuaweiCCE{})
 
-		// --- Alibaba Cloud (priced via BSS DescribePrice) ---
+		// --- Alibaba Cloud (priced via BSS GetPayAsYouGoPrice) ---
 		r.Register("alicloud_instance", &AlibabaECS{})
 		r.Register("alicloud_disk", &AlibabaDisk{})
 		r.Register("alicloud_eip", &AlibabaEIP{})

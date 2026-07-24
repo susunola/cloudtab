@@ -22,11 +22,11 @@ import (
 //     plan's charge_mode is "traffic".
 func TestHuaweiMapperRequestBodies(t *testing.T) {
 	cases := []struct {
-		name     string
-		m        Mapper
-		res      parser.PlannedResource
-		isEVS    bool
-		isEIP    bool
+		name      string
+		m         Mapper
+		res       parser.PlannedResource
+		isEVS     bool
+		isEIP     bool
 		byTraffic bool
 	}{
 		{"ecs", HuaweiECS{}, parser.PlannedResource{Type: "huaweicloud_compute_instance", Region: "cn-north-4", After: map[string]interface{}{"flavor_id": "s3.large.2"}}, false, false, false},
@@ -202,15 +202,15 @@ func TestAlibabaMapperRequestBodies(t *testing.T) {
 			if ml[0]["Config"] == "" {
 				t.Errorf("ModuleList[0].Config is empty")
 			}
-		// Documented "PropertyCode:Value" format lock: Config must begin with
-		// the module code followed by ':' (e.g. "InstanceType:...") or '.' (e.g.
-		// disk "DataDisk.Size:..."). Both are valid PropertyCode:Value shapes.
-		cm := ml[0]["Config"]
-		if !strings.HasPrefix(cm, tc.primaryModule) {
-			t.Errorf("ModuleList[0].Config = %q, want it to start with %q (PropertyCode:Value format)", cm, tc.primaryModule)
-		} else if next := cm[len(tc.primaryModule)]; next != ':' && next != '.' {
-			t.Errorf("ModuleList[0].Config = %q, want %q followed by ':' or '.' separator", cm, tc.primaryModule)
-		}
+			// Documented "PropertyCode:Value" format lock: Config must begin with
+			// the module code followed by ':' (e.g. "InstanceType:...") or '.' (e.g.
+			// disk "DataDisk.Size:..."). Both are valid PropertyCode:Value shapes.
+			cm := ml[0]["Config"]
+			if !strings.HasPrefix(cm, tc.primaryModule) {
+				t.Errorf("ModuleList[0].Config = %q, want it to start with %q (PropertyCode:Value format)", cm, tc.primaryModule)
+			} else if next := cm[len(tc.primaryModule)]; next != ':' && next != '.' {
+				t.Errorf("ModuleList[0].Config = %q, want %q followed by ':' or '.' separator", cm, tc.primaryModule)
+			}
 		})
 	}
 }

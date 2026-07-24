@@ -1,109 +1,188 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1080">
 <style>
-text { font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
-.t-title { font-size: 20px; font-weight: 700; fill: #111827; }
-.t-sub { font-size: 13px; fill: #6b7280; }
-.t-node { font-size: 15px; font-weight: 600; fill: #1f2937; }
-.t-node-sub { font-size: 12px; fill: #6b7280; }
-.t-card { font-size: 13px; font-weight: 600; fill: #1f2937; }
-.t-card-sub { font-size: 11.5px; fill: #4b5563; }
-.t-badge { font-size: 11px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
-.t-comp-title { font-size: 14px; font-weight: 600; fill: #ffffff; }
-.t-comp-item-red { font-size: 12px; fill: #991b1b; }
-.t-comp-item-green { font-size: 12px; fill: #065f46; }
-.t-comp-label { font-size: 11px; fill: #6b7280; }
+  /* ── CSS custom properties for light/dark theming ── */
+  :root {
+    --bg-canvas: #ffffff;
+    --fg-title: #111827;
+    --fg-sub: #6b7280;
+    --fg-node: #1f2937;
+    --fg-card: #1f2937;
+    --fg-card-sub: #4b5563;
+    --bg-card: #ffffff;
+    --stroke-card: #d1d5db;
+    --accent-blue: #3b82f6;
+    --accent-blue-deep: #2563eb;
+    --accent-gray: #9ca3af;
+    --divider: #e5e7eb;
+    --badge-fg: #ffffff;
+    --before-bg: #fef2f2;
+    --before-stroke: #fecaca;
+    --before-header: #dc2626;
+    --after-bg: #f0fdf4;
+    --after-stroke: #bbf7d0;
+    --after-header: #059669;
+    --item-red: #991b1b;
+    --item-green: #065f46;
+    --legend-bg: #f9fafb;
+    --legend-stroke: #e5e7eb;
+    --legend-fg: #6b7280;
+    --comp-title-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-canvas: #0b1220;
+      --fg-title: #e5e7eb;
+      --fg-sub: #94a3b8;
+      --fg-node: #d1d5db;
+      --fg-card: #d1d5db;
+      --fg-card-sub: #9ca3af;
+      --bg-card: #111827;
+      --stroke-card: #374151;
+      --accent-blue: #60a5fa;
+      --accent-blue-deep: #3b82f6;
+      --accent-gray: #6b7280;
+      --divider: #374151;
+      --badge-fg: #0b1220;
+      --before-bg: #1a0f0f;
+      --before-stroke: #7f1d1d;
+      --before-header: #dc2626;
+      --after-bg: #0a1a14;
+      --after-stroke: #14532d;
+      --after-header: #059669;
+      --item-red: #fca5a5;
+      --item-green: #6ee7b7;
+      --legend-bg: #0f172a;
+      --legend-stroke: #1e293b;
+      --legend-fg: #94a3b8;
+      --comp-title-fg: #ffffff;
+    }
+  }
+
+  text { font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .t-title { font-size: 20px; font-weight: 700; fill: var(--fg-title); }
+  .t-sub { font-size: 13px; fill: var(--fg-sub); }
+  .t-node { font-size: 15px; font-weight: 600; fill: var(--fg-node); }
+  .t-node-sub { font-size: 12px; fill: var(--fg-sub); }
+  .t-card { font-size: 13px; font-weight: 600; fill: var(--fg-card); }
+  .t-card-sub { font-size: 11.5px; fill: var(--fg-card-sub); }
+  .t-badge { font-size: 11px; font-weight: 700; fill: var(--badge-fg); text-anchor: middle; }
+  .t-comp-title { font-size: 14px; font-weight: 600; fill: var(--comp-title-fg); }
+  .t-comp-item-red { font-size: 12px; fill: var(--item-red); }
+  .t-comp-item-green { font-size: 12px; fill: var(--item-green); }
+  .t-comp-label { font-size: 11px; fill: var(--legend-fg); }
+
+  /* panel shapes */
+  .panel-bg { fill: var(--bg-canvas); }
+  .panel-card { fill: var(--bg-card); stroke: var(--stroke-card); }
+  .panel-legend { fill: var(--legend-bg); stroke: var(--legend-stroke); }
+  .panel-before-bg { fill: var(--before-bg); stroke: var(--before-stroke); }
+  .panel-after-bg { fill: var(--after-bg); stroke: var(--after-stroke); }
+
+  .line-divider { stroke: var(--divider); }
+  .line-flow { stroke: var(--accent-blue-deep); }
+  .line-dash { stroke: var(--accent-gray); }
+
+  .fill-accent { fill: var(--accent-blue); }
+  .fill-accent-deep { fill: var(--accent-blue-deep); }
+  .fill-accent-gray { fill: var(--accent-gray); }
+  .fill-before-header { fill: var(--before-header); }
+  .fill-after-header { fill: var(--after-header); }
+
+  .text-inline-green { fill: var(--item-green); }
+  .text-inline-red { fill: var(--item-red); }
+  .text-inline-sub { fill: var(--fg-sub); }
 </style>
 <defs>
-<marker id="a-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
-<marker id="a-dash" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#9ca3af"/></marker>
+<marker id="a-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" class="fill-accent-deep"/></marker>
+<marker id="a-dash" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" class="fill-accent-gray"/></marker>
 </defs>
-<rect width="1200" height="1080" fill="#ffffff"/>
-<text x="600" y="34" font-size="22" font-weight="700" fill="#111827" text-anchor="middle">CloudTab Robustness &amp; Efficiency Optimization</text>
-<text x="600" y="54" font-size="13" fill="#6b7280" text-anchor="middle">6 optimizations applied &#x2014; zero architecture change &#xB7; zero dependency drift &#xB7; 10/10 -race</text>
-<rect x="50" y="80" width="330" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<rect width="1200" height="1080" class="panel-bg"/>
+<text x="600" y="34" font-size="22" font-weight="700" fill="var(--fg-title)" text-anchor="middle">CloudTab Robustness &amp; Efficiency Optimization</text>
+<text x="600" y="54" font-size="13" fill="var(--fg-sub)" text-anchor="middle">6 optimizations applied &#x2014; zero architecture change &#xB7; zero dependency drift &#xB7; 10/10 -race</text>
+<rect x="50" y="80" width="330" height="48" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="99" text-anchor="middle" class="t-node">&#x1F4E5; Terraform Plan JSON</text>
-<line x1="215" y1="128" x2="215" y2="160" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a-blue)"/>
-<rect x="50" y="160" width="330" height="72" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<line x1="215" y1="128" x2="215" y2="160" class="line-flow" stroke-width="1.8" marker-end="url(#a-blue)"/>
+<rect x="50" y="160" width="330" height="72" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="188" text-anchor="middle" class="t-node">priceReport()</text>
 <text x="215" y="210" text-anchor="middle" class="t-node-sub">concurrent parse &amp; price, collector goroutine</text>
-<circle cx="400" cy="186" r="12" fill="#3b82f6"/>
+<circle cx="400" cy="186" r="12" class="fill-accent"/>
 <text x="400" y="190" class="t-badge">1</text>
-<circle cx="425" cy="186" r="12" fill="#3b82f6"/>
+<circle cx="425" cy="186" r="12" class="fill-accent"/>
 <text x="425" y="190" class="t-badge">5</text>
-<line x1="215" y1="232" x2="215" y2="266" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a-blue)"/>
-<rect x="50" y="266" width="330" height="72" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<line x1="215" y1="232" x2="215" y2="266" class="line-flow" stroke-width="1.8" marker-end="url(#a-blue)"/>
+<rect x="50" y="266" width="330" height="72" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="294" text-anchor="middle" class="t-node">Engine.Query()</text>
 <text x="215" y="316" text-anchor="middle" class="t-node-sub">cache check &#8594; in-flight dedup &#8594; do()</text>
-<circle cx="400" cy="302" r="12" fill="#3b82f6"/>
+<circle cx="400" cy="302" r="12" class="fill-accent"/>
 <text x="400" y="306" class="t-badge">4</text>
-<line x1="215" y1="338" x2="215" y2="372" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a-blue)"/>
-<rect x="50" y="372" width="330" height="72" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<line x1="215" y1="338" x2="215" y2="372" class="line-flow" stroke-width="1.8" marker-end="url(#a-blue)"/>
+<rect x="50" y="372" width="330" height="72" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="400" text-anchor="middle" class="t-node">dispatchWithRetry()</text>
 <text x="215" y="422" text-anchor="middle" class="t-node-sub">timeout &#8594; retry(N &#x2264; 2) &#8594; dispatch</text>
-<circle cx="400" cy="398" r="12" fill="#3b82f6"/>
+<circle cx="400" cy="398" r="12" class="fill-accent"/>
 <text x="400" y="402" class="t-badge">2</text>
-<circle cx="425" cy="398" r="12" fill="#3b82f6"/>
+<circle cx="425" cy="398" r="12" class="fill-accent"/>
 <text x="425" y="402" class="t-badge">3</text>
-<line x1="215" y1="444" x2="215" y2="478" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a-blue)"/>
-<rect x="50" y="478" width="330" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<line x1="215" y1="444" x2="215" y2="478" class="line-flow" stroke-width="1.8" marker-end="url(#a-blue)"/>
+<rect x="50" y="478" width="330" height="48" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="497" text-anchor="middle" class="t-node">&#x2601;&#xFE0F; Tencent SDK / AWS SDK</text>
-<circle cx="400" cy="502" r="12" fill="#3b82f6"/>
+<circle cx="400" cy="502" r="12" class="fill-accent"/>
 <text x="400" y="506" class="t-badge">6</text>
-<line x1="215" y1="526" x2="215" y2="560" stroke="#2563eb" stroke-width="1.8" marker-end="url(#a-blue)"/>
-<rect x="50" y="560" width="330" height="48" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+<line x1="215" y1="526" x2="215" y2="560" class="line-flow" stroke-width="1.8" marker-end="url(#a-blue)"/>
+<rect x="50" y="560" width="330" height="48" rx="8" class="panel-card" stroke-width="1.5"/>
 <text x="215" y="579" text-anchor="middle" class="t-node">&#x1F4CA; Cost Report (USD / CNY)</text>
-<rect x="470" y="90" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="470" y="90" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="498" cy="117" r="13" fill="#3b82f6"/>
+<rect x="470" y="90" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="470" y="90" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="498" cy="117" r="13" class="fill-accent"/>
 <text x="498" y="121" class="t-badge">1</text>
 <text x="520" y="120" class="t-card">Deadlock Fix</text>
 <text x="520" y="140" class="t-card-sub">errs chan buffer=8 &#8594; >8 hard errors = deadlock</text>
 <text x="520" y="158" class="t-card-sub">New: collector goroutine drains results concurrently</text>
-<rect x="840" y="90" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="840" y="90" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="868" cy="117" r="13" fill="#3b82f6"/>
+<rect x="840" y="90" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="840" y="90" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="868" cy="117" r="13" class="fill-accent"/>
 <text x="868" y="121" class="t-badge">5</text>
 <text x="890" y="120" class="t-card">Config Concurrency</text>
 <text x="890" y="140" class="t-card-sub">--concurrency / $CLOUDTAB_CONCURRENCY (default 8)</text>
 <text x="890" y="158" class="t-card-sub">Clamped to [1, n]; bad env falls through to default</text>
-<rect x="470" y="200" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="470" y="200" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="498" cy="227" r="13" fill="#3b82f6"/>
+<rect x="470" y="200" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="470" y="200" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="498" cy="227" r="13" class="fill-accent"/>
 <text x="498" y="231" class="t-badge">4</text>
 <text x="520" y="230" class="t-card">In-flight Dedup</text>
 <text x="520" y="250" class="t-card-sub">map+mutex on Engine, zero external deps</text>
 <text x="520" y="268" class="t-card-sub">Avoids x/sync/singleflight &#8594; preserves zero-drift</text>
-<rect x="840" y="200" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="840" y="200" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="868" cy="227" r="13" fill="#3b82f6"/>
+<rect x="840" y="200" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="840" y="200" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="868" cy="227" r="13" class="fill-accent"/>
 <text x="868" y="231" class="t-badge">2</text>
 <text x="890" y="230" class="t-card">Per-Request Timeout</text>
 <text x="890" y="250" class="t-card-sub">HttpProfile.ReqTimeout for Tencent SDK</text>
 <text x="890" y="268" class="t-card-sub">AWS: context deadline from cfg.requestTimeout()</text>
-<rect x="470" y="310" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="470" y="310" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="498" cy="337" r="13" fill="#3b82f6"/>
+<rect x="470" y="310" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="470" y="310" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="498" cy="337" r="13" class="fill-accent"/>
 <text x="498" y="341" class="t-badge">3</text>
 <text x="520" y="340" class="t-card">Exponential Backoff Retry</text>
 <text x="520" y="360" class="t-card-sub">200ms base, &#215;2, capped 2s, max 2 retries</text>
 <text x="520" y="378" class="t-card-sub">isRetryable() string-substring classifier</text>
-<rect x="840" y="310" width="340" height="90" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-<rect x="840" y="310" width="5" height="90" rx="3" fill="#3b82f6"/>
-<circle cx="868" cy="337" r="13" fill="#3b82f6"/>
+<rect x="840" y="310" width="340" height="90" rx="8" class="panel-card" stroke-width="1.5"/>
+<rect x="840" y="310" width="5" height="90" rx="3" class="fill-accent"/>
+<circle cx="868" cy="337" r="13" class="fill-accent"/>
 <text x="868" y="341" class="t-badge">6</text>
 <text x="890" y="340" class="t-card">Provider-Tagged Errors</text>
 <text x="890" y="360" class="t-card-sub">aws &lt;product&gt;: &lt;err&gt;</text>
 <text x="890" y="378" class="t-card-sub">tencentcloud &lt;product&gt;.&lt;action&gt;: &lt;err&gt;</text>
-<line x1="400" y1="174" x2="470" y2="117" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="425" y1="174" x2="840" y2="117" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="388" y1="302" x2="470" y2="227" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="412" y1="398" x2="840" y2="227" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="425" y1="386" x2="470" y2="337" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="388" y1="502" x2="840" y2="337" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
-<line x1="50" y1="650" x2="1150" y2="650" stroke="#e5e7eb" stroke-width="1"/>
-<text x="600" y="640" font-size="15" font-weight="600" fill="#6b7280" text-anchor="middle">Impact Summary: Before vs After</text>
-<rect x="50" y="668" width="530" height="330" rx="10" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
-<path d="M 50 678 a 10 10 0 0 1 10 -10 h 510 a 10 10 0 0 1 10 10 v 26 h -530 z" fill="#dc2626"/>
+<line x1="400" y1="174" x2="470" y2="117" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="425" y1="174" x2="840" y2="117" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="388" y1="302" x2="470" y2="227" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="412" y1="398" x2="840" y2="227" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="425" y1="386" x2="470" y2="337" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="388" y1="502" x2="840" y2="337" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#a-dash)"/>
+<line x1="50" y1="650" x2="1150" y2="650" class="line-divider" stroke-width="1"/>
+<text x="600" y="640" font-size="15" font-weight="600" fill="var(--fg-sub)" text-anchor="middle">Impact Summary: Before vs After</text>
+<rect x="50" y="668" width="530" height="330" rx="10" class="panel-before-bg" stroke-width="1.5"/>
+<path d="M 50 678 a 10 10 0 0 1 10 -10 h 510 a 10 10 0 0 1 10 10 v 26 h -530 z" class="fill-before-header"/>
 <text x="315" y="691" class="t-comp-title" text-anchor="middle">Before (v0 baseline)</text>
 <text x="72" y="725" class="t-comp-item-red">&#x26A0;  errs chan buffer=8: >8 hard errors = deadlock, workers block forever</text>
 <text x="72" y="767" class="t-comp-item-red">&#x26A0;  No per-request timeout: stuck API call hangs entire run</text>
@@ -111,8 +190,8 @@ text { font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsof
 <text x="72" y="851" class="t-comp-item-red">&#x26A0;  Duplicate API calls: N identical resources = N identical API calls</text>
 <text x="72" y="893" class="t-comp-item-red">&#x26A0;  Concurrency hardcoded to 8, no CLI/env override</text>
 <text x="72" y="935" class="t-comp-item-red">&#x26A0;  Generic error messages, hard to identify which provider/product failed</text>
-<rect x="620" y="668" width="530" height="330" rx="10" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
-<path d="M 620 678 a 10 10 0 0 1 10 -10 h 510 a 10 10 0 0 1 10 10 v 26 h -530 z" fill="#059669"/>
+<rect x="620" y="668" width="530" height="330" rx="10" class="panel-after-bg" stroke-width="1.5"/>
+<path d="M 620 678 a 10 10 0 0 1 10 -10 h 510 a 10 10 0 0 1 10 10 v 26 h -530 z" class="fill-after-header"/>
 <text x="885" y="691" class="t-comp-title" text-anchor="middle">After (v1 optimized)</text>
 <text x="642" y="725" class="t-comp-item-green">&#x2713;  Collector goroutine: unlimited error capacity, no deadlock</text>
 <text x="642" y="767" class="t-comp-item-green">&#x2713;  30s per-request timeout via HttpProfile.ReqTimeout + AWS context</text>
@@ -120,15 +199,15 @@ text { font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsof
 <text x="642" y="851" class="t-comp-item-green">&#x2713;  In-flight dedup: 1 API call per unique key, map+mutex, zero external deps</text>
 <text x="642" y="893" class="t-comp-item-green">&#x2713;  --concurrency / $CLOUDTAB_CONCURRENCY: configurable, clamped [1, n]</text>
 <text x="642" y="935" class="t-comp-item-green">&#x2713;  Provider-tagged: aws &lt;product&gt;: / tencentcloud &lt;product&gt;.&lt;action&gt;:</text>
-<rect x="50" y="1030" width="1100" height="44" rx="6" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+<rect x="50" y="1030" width="1100" height="44" rx="6" class="panel-legend" stroke-width="1"/>
 <text x="70" y="1057" class="t-comp-label">Legend:</text>
-<rect x="130" y="1045" width="14" height="14" rx="2" fill="#3b82f6"/>
+<rect x="130" y="1045" width="14" height="14" rx="2" class="fill-accent"/>
 <text x="150" y="1057" class="t-comp-label">1-6 = optimization number</text>
-<line x1="290" y1="1052" x2="320" y2="1052" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4,3"/>
+<line x1="290" y1="1052" x2="320" y2="1052" class="line-dash" stroke-width="1.2" stroke-dasharray="4,3"/>
 <text x="328" y="1057" class="t-comp-label">connects pipeline node &#8594; annotation card</text>
-<rect x="600" y="1045" width="14" height="14" rx="2" fill="#2563eb"/>
+<rect x="600" y="1045" width="14" height="14" rx="2" class="fill-accent-deep"/>
 <text x="620" y="1057" class="t-comp-label">pipeline flow</text>
-<text x="740" y="1057" class="t-comp-label" fill="#16a34a">&#x2713; improved</text>
-<text x="850" y="1057" class="t-comp-label" fill="#dc2626">&#x26A0; issue resolved</text>
+<text x="740" y="1057" class="t-comp-label text-inline-green">&#x2713; improved</text>
+<text x="850" y="1057" class="t-comp-label text-inline-red">&#x26A0; issue resolved</text>
 <text x="970" y="1057" class="t-comp-label">no architecture / deps / cache-format changes</text>
 </svg>

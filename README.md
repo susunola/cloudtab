@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 45 resource types across four providers.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 55 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -124,8 +124,9 @@ Notes:
 - Identical concurrent requests are **de-duplicated in-flight**: if two resources
   in the same plan need the exact same price, only one API call is made and both
   share the result.
-- The run is **fail-fast**: any un-recoverable pricing error still aborts the
-  whole estimate (so a partial/misleading total is never emitted).
+- By default, a failed resource is **skipped** (recorded in the output with a
+  reason) so one bad SKU cannot sink an entire large plan. Pass `--fail-on-error`
+  to restore strict fail-fast behaviour.
 
 Sample output:
 

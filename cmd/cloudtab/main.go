@@ -99,9 +99,9 @@ func main() {
 		},
 	}
 	breakdown.Flags().StringVar(&path, "path", "plan.json", "Path to terraform plan.json")
-	breakdown.Flags().StringVar(&region, "region", "ap-guangzhou", "Default region for pricing lookup")
+	breakdown.Flags().StringVar(&region, "region", "ap-guangzhou", "Fallback region for resources whose provider block omits one (applies across providers; example: ap-guangzhou)")
 	breakdown.Flags().StringVar(&usageFile, "usage-file", "", "Path to usage.yml assumptions (optional)")
-	breakdown.Flags().StringVar(&format, "format", "table", "Output format: table|json")
+	breakdown.Flags().StringVar(&format, "format", "table", "Output format: table|json (markdown is available via `cloudtab diff`)")
 	breakdown.Flags().BoolVar(&noCache, "no-cache", false, "Disable on-disk price cache")
 	breakdown.Flags().StringVar(&cacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	breakdown.Flags().StringVar(&site, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
@@ -161,7 +161,7 @@ func main() {
 	}
 	diff.Flags().StringVar(&before, "before", "", "Path to baseline plan.json (required)")
 	diff.Flags().StringVar(&after, "after", "", "Path to new plan.json (required)")
-	diff.Flags().StringVar(&diffReg, "region", "ap-guangzhou", "Default region for pricing lookup")
+	diff.Flags().StringVar(&diffReg, "region", "ap-guangzhou", "Fallback region for resources whose provider block omits one (applies across providers; example: ap-guangzhou)")
 	diff.Flags().StringVar(&beforeUsageFile, "before-usage-file", "", "Path to usage.yml for --before plan (optional)")
 	diff.Flags().StringVar(&afterUsageFile, "after-usage-file", "", "Path to usage.yml for --after plan (optional)")
 	diff.Flags().StringVar(&diffFmt, "format", "table", "Output format: table|json|markdown")
@@ -272,7 +272,7 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)
 	if err != nil {
-		return rep, fmt.Errorf("parse plan: %w", err)
+		return rep, fmt.Errorf("parse plan: %w (hint: pass the JSON form — run 'terraform show -json <planfile> > plan.json')", err)
 	}
 	registry := resources.DefaultRegistry()
 

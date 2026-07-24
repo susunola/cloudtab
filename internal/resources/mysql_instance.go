@@ -105,7 +105,7 @@ func (MySQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 		return nil, err
 	}
 
-	priceYuan := p.Price / 100.0
+	priceYuan := preferDiscount(p.Price, p.Original) / 100.0
 	payType := fmt.Sprintf("%v", req.Params["PayType"])
 	monthly := priceYuan
 	hourly := 0.0

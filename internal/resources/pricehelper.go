@@ -116,6 +116,9 @@ func parseTencentPrice(raw []byte) (tencentSimplePrice, error) {
 	if wrap.Response.Price > 0 {
 		p.Price = wrap.Response.Price
 	}
+	if wrap.Response.Original > 0 {
+		p.Original = wrap.Response.Original
+	}
 	if wrap.Response.Currency != "" {
 		p.Currency = wrap.Response.Currency
 	}

@@ -52,7 +52,7 @@ func (AlibabaSLB) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompon
 		return nil, err
 	}
 	return []output.CostComponent{{
-		Name:        fmt.Sprintf("Alibaba SLB"),
+		Name:        "Alibaba SLB",
 		Unit:        "HOUR",
 		HourlyCost:  info.PriceYuan,
 		MonthlyCost: info.PriceYuan * hoursPerMonth,

@@ -1,6 +1,6 @@
 <!-- Example of the markdown cloudtab posts to a PR. -->
 
-## 💰 cloudtab — Tencent Cloud cost estimate
+## 💰 cloudtab — Cloud cost estimate
 
 **Monthly change:** `+312.48 CNY` (before `1,204.10` → after `1,516.58`)
 
@@ -11,4 +11,4 @@
 | ~ | `tencentcloud_clb_instance.public` | 138.90 | 192.18 | **+53.28** |
 | - | `tencentcloud_eip.legacy` | 24.00 | 0.00 | **-24.00** |
 
-> Priced via Tencent Cloud `InquiryPrice*` APIs. All amounts in CNY.
+> Priced via provider-specific pricing APIs (InquiryPrice / BSS / AWS Price List). Currency varies by provider.

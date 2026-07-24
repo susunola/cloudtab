@@ -10,8 +10,8 @@
 //   - req.Product  = the BSS ProductCode (e.g. "ecs", "rds", "slb").
 //   - req.Region   = the Alibaba Cloud region (e.g. "cn-hangzhou").
 //   - req.Params   = neutral params map. The backend reads:
-//       "SubscriptionType": "PayAsYouGo" | "Subscription" (default: "PayAsYouGo")
-//       "ModuleList":        []map[string]interface{} with keys ModuleCode, PriceType, Config
+//     "SubscriptionType": "PayAsYouGo" | "Subscription" (default: "PayAsYouGo")
+//     "ModuleList":        []map[string]interface{} with keys ModuleCode, PriceType, Config
 package pricing
 
 import (
@@ -52,6 +52,11 @@ func newAlibabaBackend(cfg Config) (backend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("alibaba: create BSS client: %w", err)
 	}
+	// Honor the shared --timeout: the Alibaba SDK client otherwise uses its own
+	// default and ignores cfg.requestTimeout(), unlike the Huawei backend.
+	to := cfg.requestTimeout()
+	client.SetReadTimeout(to)
+	client.SetConnectTimeout(to)
 	return &alibabaBackend{client: client}, nil
 }
 

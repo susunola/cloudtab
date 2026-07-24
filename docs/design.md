@@ -103,6 +103,8 @@ tencentcloud_cos_bucket.static_site:
 
 ## 三、MVP 里程碑与工程量估算
 
+> ⚠️ 以下为项目初期的原始里程碑规划，仅供历史参考。实际进展（含多云支持、GitHub Action、缓存/重试等）请参见 [README Roadmap](../README.md#roadmap)。
+
 | 里程碑 | 内容 | 工程量 |
 |---|---|---|
 | **M1**（本仓库当前状态） | CVM 询价端到端跑通，table 输出 | ~1 周 |
@@ -123,7 +125,7 @@ M1-M4 大约 6 周就有可用产品，比 Infracost 早期路径快得多，因
 
 ## 五、开源策略建议
 
-1. **License**：Apache 2.0（Infracost 是 Apache 2.0，友好，允许被商业化包装）
+1. **License**：MIT（最终选择 MIT，更简洁；Infracost 是 Apache 2.0）
 2. **命名**：`cloudtab` / `tccost-tf` / `qcloud-cost`（`tencentcloud_` 是 provider 名，不要占 tf 命名空间）
 3. **首个 release 前**：写 3-5 个真实 fixture plan（web app / k8s / 数据平台），保证输出稳定
 4. **社区冷启动**：发到腾讯云开发者社区、SegmentFault、GitHub Trending，`terraform` `finops` 标签

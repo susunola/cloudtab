@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -38,7 +37,7 @@ func (HuaweiELB) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompone
 		return nil, err
 	}
 	return []output.CostComponent{{
-		Name:        fmt.Sprintf("Huawei ELB"),
+		Name:        "Huawei ELB",
 		Unit:        "HOUR",
 		HourlyCost:  info.Amount,
 		MonthlyCost: info.Amount * hoursPerMonth,

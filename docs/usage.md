@@ -42,9 +42,13 @@ go build -o cloudtab ./cmd/cloudtab
 
 ---
 
-## 2. 准备腾讯云凭据
+## 2. 准备云厂商凭据
 
-`cloudtab` 只调**只读**的 `InquiryPrice*` 接口，不需要写权限。**强烈建议**用 CAM 建一个专用子账号，最小权限：
+`cloudtab` 只调**只读**的询价接口，不需要写权限。各厂商的凭证**按需提供**——只有 plan 里出现该厂商的资源时才会校验，纯单云 plan 不需要其他厂商的密钥。
+
+### 2a. 腾讯云
+
+`cloudtab` 只调**只读**的 `InquiryPrice*` 接口。**强烈建议**用 CAM 建一个专用子账号，最小权限：
 
 **方法一：控制台**
 1. 打开 [CAM 控制台](https://console.cloud.tencent.com/cam) → 用户 → 新建子用户 → 编程访问
@@ -78,6 +82,34 @@ export TENCENTCLOUD_SECRET_KEY=xxxxxxxx
 ```
 
 推荐把它们写进 `direnv` 的 `.envrc` 或 1Password / Vault 里，**不要**提交进仓库。
+
+### 2b. AWS（可选 — 仅当 plan 含 `aws_*` 资源时需要）
+
+使用标准 AWS 凭证链（环境变量 / 共享配置文件 / IAM role）。唯一需要的权限是 `pricing:GetProducts`，建议附加 `AWSPriceListServiceFullAccess` 托管策略或等价的只读策略。
+
+```bash
+export AWS_ACCESS_KEY_ID=AKIAxxxx
+export AWS_SECRET_ACCESS_KEY=xxxxxxxx
+```
+
+### 2c. 阿里云（可选 — 仅当 plan 含 `alicloud_*` 资源时需要）
+
+需要 BSS（Business Support System）读权限以调用 `GetPayAsYouGoPrice`。建议用 RAM 建一个专用子账号，附加 `AliyunBSSReadOnlyAccess` 或等价自定义策略。
+
+```bash
+export ALIBABA_ACCESS_KEY_ID=LTAIxxxx
+export ALIBABA_ACCESS_KEY_SECRET=xxxxxxxx
+```
+
+### 2d. 华为云（可选 — 仅当 plan 含 `huaweicloud_*` 资源时需要）
+
+需要 BSS 读权限以调用 `ListOnDemandResourceRatings`。使用全局级别的 AK/SK（非项目级），建议附加 `BSS Operator` 或等价自定义策略。如果华为云账号使用了企业项目管理（EPS），还需提供项目 UUID：
+
+```bash
+export HUAWEI_ACCESS_KEY_ID=xxxx
+export HUAWEI_SECRET_ACCESS_KEY=xxxxxxxx
+export HUAWEI_PROJECT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  # 可选，企业项目管理 UUID
+```
 
 ---
 
@@ -130,6 +162,14 @@ Skipped resources:
 | `--region` | `ap-guangzhou` | 默认地域；plan 里显式指定的 region 优先 |
 | `--usage-file` | 空 | usage 假设 YAML（按资源 address 覆盖参数，如 `mem_size`、`monthly_*`） |
 | `--format` | `table` | `table` / `json` |
+| `--concurrency` | `8` | 并行询价数；也读 `$CLOUDTAB_CONCURRENCY` |
+| `--timeout` | `30s` | 每次 API 询价请求超时 |
+| `--max-retries` | `2` | 瞬时错误（限流/5xx/超时）重试次数；`0` 关闭重试 |
+| `--fail-on-error` | `false` | 遇错即中止整个报告（默认跳过失败资源继续） |
+| `--no-cache` | `false` | 禁用磁盘缓存 |
+| `--cache-dir` | `$HOME/.cloudtab` | 缓存目录路径 |
+| `--cache-ttl` | `24h` | 缓存条目有效期 |
+| `--site` | `domestic` | 腾讯云站点：`domestic`/`intl`（也读 `$TENCENTCLOUD_SITE`） |
 
 **JSON 输出（供脚本消费）：**
 ```bash
@@ -171,7 +211,7 @@ cloudtab diff --before plan.old.json --after plan.new.json --format markdown
 **Markdown 输出**（贴到 PR 评论里很好看）：
 
 ```markdown
-## 💰 cloudtab — Tencent Cloud cost estimate
+## 💰 cloudtab — Cloud cost estimate
 
 **Monthly change:** `+312.48 CNY` (before `1204.10` → after `1516.58`)
 
@@ -201,6 +241,14 @@ cloudtab diff --before plan.old.json --after plan.new.json --format markdown
 | `--before-usage-file` | 空 | 基线 plan 的 usage 覆盖 YAML |
 | `--after-usage-file` | 空 | 新 plan 的 usage 覆盖 YAML |
 | `--format` | `table` | `table` / `json` / `markdown` |
+| `--concurrency` | `8` | 并行询价数；也读 `$CLOUDTAB_CONCURRENCY` |
+| `--timeout` | `30s` | 每次 API 询价请求超时 |
+| `--max-retries` | `2` | 瞬时错误（限流/5xx/超时）重试次数；`0` 关闭重试 |
+| `--fail-on-error` | `false` | 遇错即中止整个报告（默认跳过失败资源继续） |
+| `--no-cache` | `false` | 禁用磁盘缓存 |
+| `--cache-dir` | `$HOME/.cloudtab` | 缓存目录路径 |
+| `--cache-ttl` | `24h` | 缓存条目有效期 |
+| `--site` | `domestic` | 腾讯云站点：`domestic`/`intl`（也读 `$TENCENTCLOUD_SITE`） |
 
 ---
 

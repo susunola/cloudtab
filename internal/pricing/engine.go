@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -190,10 +191,10 @@ func (r PriceRequest) provider() string {
 }
 
 const (
-	providerTencent  = "tencentcloud"
-	providerAWS      = "aws"
-	providerAlibaba  = "alibaba"
-	providerHuawei   = "huawei"
+	providerTencent = "tencentcloud"
+	providerAWS     = "aws"
+	providerAlibaba = "alibaba"
+	providerHuawei  = "huawei"
 )
 
 func (r PriceRequest) CacheKey() (string, error) {
@@ -268,6 +269,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 			// Cache is an optimization, not a correctness requirement. If another
 			// process holds the lock or the path is unusable, degrade gracefully
 			// to an uncached engine rather than failing the whole cost run.
+			fmt.Fprintf(os.Stderr, "cloudtab: warning: price cache disabled (%v); running without cache\n", err)
 			return e, nil
 		}
 		e.cache = c
@@ -458,15 +460,20 @@ func isRetryable(err error) bool {
 // retryableSignatures are lowercase substrings that mark a transient error.
 // Tencent throttling codes take the form "RequestLimitExceeded" /
 // "...LimitExceeded" / "InternalError"; AWS throttling is "Throttling" /
-// "ThrottlingException" / "TooManyRequestsException". Timeouts and connection
+// "ThrottlingException" / "TooManyRequestsException"; Alibaba Cloud returns
+// "SystemBusy" / "Throttling.User" for rate limiting. Timeouts and connection
 // resets are transient on either side.
+//
+// NOTE: "throttl" as a prefix matches both AWS "Throttling/ThrottlingException"
+// and Alibaba "Throttling.User", so we do NOT add a separate "throttling" entry.
 var retryableSignatures = []string{
 	"limitexceeded", // Tencent RequestLimitExceeded / <X>.LimitExceeded
 	"requestlimitexceeded",
-	"throttl",         // AWS Throttling / ThrottlingException
+	"throttl",         // AWS Throttling / ThrottlingException; Alibaba Throttling.User
 	"toomanyrequests", // AWS TooManyRequestsException
 	"rate exceeded",
 	"internalerror",      // Tencent transient InternalError
+	"systembusy",         // Alibaba Cloud rate limiting (SystemBusy)
 	"serviceunavailable", // 503
 	"service unavailable",
 	"timeout", // context/request/dial timeout
@@ -474,7 +481,7 @@ var retryableSignatures = []string{
 	"deadline exceeded",
 	"connection reset",
 	"connection refused",
-	"eof", // truncated response / closed connection
+	"unexpected eof", // truncated response / closed connection (narrower than plain "eof")
 	"temporary",
 }
 

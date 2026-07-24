@@ -27,18 +27,45 @@ func findDiff(d DiffReport, addr string) (ResourceDiff, bool) {
 func eq(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
 func TestComputeDiff(t *testing.T) {
-	before := Report{Resources: []ResourceCost{
-		rc("tencentcloud_instance.keep", "tencentcloud_instance", 100), // unchanged
-		rc("tencentcloud_instance.grow", "tencentcloud_instance", 50),  // changed up
-		rc("tencentcloud_instance.gone", "tencentcloud_instance", 30),  // removed
-	}}
-	after := Report{Resources: []ResourceCost{
-		rc("tencentcloud_instance.keep", "tencentcloud_instance", 100), // unchanged
-		rc("tencentcloud_instance.grow", "tencentcloud_instance", 80),  // changed up
-		rc("tencentcloud_instance.new", "tencentcloud_instance", 20),   // added
-	}}
+	before := Report{
+		Resources: []ResourceCost{
+			rc("tencentcloud_instance.keep", "tencentcloud_instance", 100), // unchanged
+			rc("tencentcloud_instance.grow", "tencentcloud_instance", 50),  // changed up
+			rc("tencentcloud_instance.gone", "tencentcloud_instance", 30),  // removed
+		},
+		Skipped: []SkippedResource{
+			{Address: "aws_instance.old_skip", Type: "aws_instance", Reason: "unsupported instance type"},
+		},
+	}
+	after := Report{
+		Resources: []ResourceCost{
+			rc("tencentcloud_instance.keep", "tencentcloud_instance", 100), // unchanged
+			rc("tencentcloud_instance.grow", "tencentcloud_instance", 80),  // changed up
+			rc("tencentcloud_instance.new", "tencentcloud_instance", 20),   // added
+		},
+		Skipped: []SkippedResource{
+			{Address: "aws_instance.new_skip", Type: "aws_instance", Reason: "unsupported instance type"},
+		},
+	}
 
 	d := ComputeDiff(before, after)
+
+	// Currency inferred from both reports (both use CNY in the rc helper).
+	if d.Currency != "CNY" {
+		t.Errorf("Currency = %q, want CNY", d.Currency)
+	}
+
+	// Skipped resources merged from both sides, de-duplicated.
+	if len(d.Skipped) != 2 {
+		t.Fatalf("Skipped = %d, want 2", len(d.Skipped))
+	}
+	gotAddr := map[string]bool{}
+	for _, s := range d.Skipped {
+		gotAddr[s.Address] = true
+	}
+	if !gotAddr["aws_instance.old_skip"] || !gotAddr["aws_instance.new_skip"] {
+		t.Errorf("skipped addresses missing: %v", d.Skipped)
+	}
 
 	// Totals: before = 180, after = 200, delta = +20
 	if !eq(d.BeforeTotal, 180) {

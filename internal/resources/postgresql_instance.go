@@ -77,7 +77,7 @@ func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		return nil, err
 	}
 
-	priceYuan := p.Price / 100.0
+	priceYuan := preferDiscount(p.Price, p.Original) / 100.0
 	chargeType := fmt.Sprintf("%v", req.Params["InstanceChargeType"])
 	monthly := priceYuan
 	hourly := 0.0

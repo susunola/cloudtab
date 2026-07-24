@@ -1,5 +1,5 @@
-name: "cloudtab — Tencent Cloud cost estimation"
-description: "Estimate monthly Tencent Cloud cost from a Terraform plan and comment on the PR."
+name: "cloudtab — Multi-cloud cost estimation"
+description: "Estimate monthly cloud cost (Tencent/AWS/Alibaba/Huawei) from a Terraform plan and comment on the PR."
 author: "cloudtab contributors"
 branding:
   icon: "trending-up"
@@ -58,6 +58,13 @@ runs:
       env:
         TENCENTCLOUD_SECRET_ID: ${{ env.TENCENTCLOUD_SECRET_ID }}
         TENCENTCLOUD_SECRET_KEY: ${{ env.TENCENTCLOUD_SECRET_KEY }}
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        ALIBABA_ACCESS_KEY_ID: ${{ env.ALIBABA_ACCESS_KEY_ID }}
+        ALIBABA_ACCESS_KEY_SECRET: ${{ env.ALIBABA_ACCESS_KEY_SECRET }}
+        HUAWEI_ACCESS_KEY_ID: ${{ env.HUAWEI_ACCESS_KEY_ID }}
+        HUAWEI_SECRET_ACCESS_KEY: ${{ env.HUAWEI_SECRET_ACCESS_KEY }}
+        HUAWEI_PROJECT_ID: ${{ env.HUAWEI_PROJECT_ID }}
       run: |
         set -euo pipefail
         terraform init -input=false -no-color

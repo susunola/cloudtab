@@ -10,7 +10,7 @@
 //   - req.Product  = informational label (e.g. "ecs", "rds", "dcs").
 //   - req.Region   = the Huawei Cloud region (e.g. "cn-north-4", "ap-singapore").
 //   - req.Params   = the RateOnDemandReq body fields:
-//       "product_infos":     []DemandProductInfo
+//     "product_infos":     []DemandProductInfo
 //     where each DemandProductInfo has: id, cloud_service_type, resource_type,
 //     resource_spec, region, usage_factor, usage_value, usage_measure_id,
 //     subscription_num. The project_id (a UUID, NOT the region) is injected by

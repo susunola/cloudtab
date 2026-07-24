@@ -102,6 +102,8 @@ func TestIsRetryable(t *testing.T) {
 		errors.New("dial tcp: i/o timeout"),
 		errors.New("read: connection reset by peer"),
 		errors.New("unexpected EOF"),
+		errors.New("alibaba api SystemBusy: please retry later"),
+		errors.New("Throttling.User: request was throttled"),
 	}
 	for _, e := range retry {
 		if !isRetryable(e) {
@@ -114,6 +116,7 @@ func TestIsRetryable(t *testing.T) {
 		errors.New("bind params: bad field"),
 		errors.New("aws price list: no matching products"),
 		errors.New("InvalidParameterValue"),
+		errors.New("api error APIGW.0301: token expired"), // Huawei token expiry — must NOT retry
 	}
 	for _, e := range noRetry {
 		if isRetryable(e) {
