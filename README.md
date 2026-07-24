@@ -268,6 +268,17 @@ jobs:
 
 A sticky PR comment like [this](examples/pr-comment.md) shows up on every PR that changes `.tf` files.
 
+## Local quality gate
+
+`scripts/check.sh` runs the same checks as CI (`gofmt`, `go vet`, `go build`,
+`go test -race ./...`) and exits non-zero on the first failure. Run it before
+every commit, or install it as a pre-commit hook so it runs automatically:
+
+```bash
+bash scripts/check.sh
+ln -sf ../../scripts/check.sh .git/hooks/pre-commit
+```
+
 ## Design in 60 seconds
 
 ```
