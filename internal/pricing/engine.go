@@ -322,7 +322,7 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 // first caller for a key runs the real backend call (and populates the cache);
 // concurrent callers for the same key block and share its result instead of
 // issuing their own backend call.
-func (e *Engine) do(key string, req PriceRequest) ([]byte, error) {
+func (e *Engine) do(key string, req PriceRequest) (resp []byte, err error) {
 	e.flightMu.Lock()
 	// Lazily initialise the in-flight map. NewEngine always populates it, but
 	// guarding here means a directly-constructed &Engine{} (e.g. in tests or
@@ -339,6 +339,22 @@ func (e *Engine) do(key string, req PriceRequest) ([]byte, error) {
 	e.flight[key] = call
 	e.flightMu.Unlock()
 
+	// Guarantee the in-flight entry is cleared and every deduped waiter is
+	// released even if dispatch panics, and surface that panic as an error to
+	// the leader and all waiters alike. Without this deferred cleanup a single
+	// panicking dispatch would leave call.done never closed — deadlocking every
+	// goroutine blocked on it and poisoning the key for all future calls.
+	defer func() {
+		if p := recover(); p != nil {
+			call.resp, call.err = nil, fmt.Errorf("panic dispatching %s/%s: %v", req.Product, req.Action, p)
+		}
+		e.flightMu.Lock()
+		delete(e.flight, key)
+		e.flightMu.Unlock()
+		close(call.done)
+		resp, err = call.resp, call.err
+	}()
+
 	call.resp, call.err = e.dispatchWithRetry(req)
 
 	// Populate the on-disk cache only on success so a transient failure is not
@@ -346,11 +362,6 @@ func (e *Engine) do(key string, req PriceRequest) ([]byte, error) {
 	if call.err == nil && e.cache != nil {
 		_ = e.cache.Put(key, call.resp)
 	}
-
-	e.flightMu.Lock()
-	delete(e.flight, key)
-	e.flightMu.Unlock()
-	close(call.done)
 
 	return call.resp, call.err
 }

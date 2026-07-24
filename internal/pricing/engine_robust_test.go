@@ -220,6 +220,60 @@ func TestInflightDedupCollapsesConcurrentIdenticalRequests(t *testing.T) {
 	}
 }
 
+// panicBackend is a fake backend whose query always panics, used to verify a
+// dispatch panic is surfaced as an error and never deadlocks de-duplicated
+// waiters waiting on the shared in-flight call.
+type panicBackend struct {
+	gate chan struct{} // when non-nil, query blocks until closed, then panics
+}
+
+func (b *panicBackend) query(_ PriceRequest) ([]byte, error) {
+	if b.gate != nil {
+		<-b.gate
+	}
+	panic("boom in dispatch")
+}
+
+func TestInflightDedupReleasesWaitersOnPanic(t *testing.T) {
+	b := &panicBackend{gate: make(chan struct{})}
+	e := engineWithBackend(Config{MaxRetries: -1}, b)
+
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			_, errs[idx] = e.Query(awsReq())
+		}(i)
+	}
+	close(start)
+
+	// Let the goroutines converge: one leader blocks in query on the gate while
+	// the rest block on the shared in-flight call, then release the leader to
+	// panic. If do() failed to close the call's done channel the waiters would
+	// hang here and the test would time out; completing proves no deadlock.
+	time.Sleep(50 * time.Millisecond)
+	close(b.gate)
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		if errs[i] == nil {
+			t.Fatalf("caller %d: expected a panic-derived error, got nil", i)
+		}
+	}
+	// The in-flight key must be cleared, not poisoned for future calls.
+	e.flightMu.Lock()
+	leaked := len(e.flight)
+	e.flightMu.Unlock()
+	if leaked != 0 {
+		t.Fatalf("in-flight map leaked %d entries after panic", leaked)
+	}
+}
+
 func TestInflightDedupClearsAfterCompletion(t *testing.T) {
 	b := &countingBackend{resp: []byte(`["x"]`)}
 	e := engineWithBackend(Config{MaxRetries: -1}, b)

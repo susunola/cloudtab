@@ -42,14 +42,6 @@ func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 	if goodsNum <= 0 {
 		goodsNum = 1
 	}
-	period := getInt(r.After, "prepaid_period")
-	if period <= 0 {
-		period = getInt(r.After, "period")
-	}
-	if period <= 0 {
-		period = 1
-	}
-
 	chargeType := strings.ToUpper(getStr(r.After, "charge_type"))
 	billingMode := int64(0)
 	if chargeType == "PREPAID" || chargeType == "PRE_PAID" {
@@ -57,10 +49,13 @@ func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 	}
 
 	params := map[string]interface{}{
-		"TypeId":      typeID,
-		"MemSize":     memSize,
-		"GoodsNum":    goodsNum,
-		"Period":      period,
+		"TypeId":   typeID,
+		"MemSize":  memSize,
+		"GoodsNum": goodsNum,
+		// Always price a single month: cloudtab reports a monthly run-rate and
+		// the PREPAID (BillingMode=1) price is a period total, so Period=1
+		// keeps it monthly.
+		"Period":      1,
 		"BillingMode": billingMode,
 		"ZoneName":    zoneName,
 	}

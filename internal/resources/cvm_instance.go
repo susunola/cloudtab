@@ -43,7 +43,10 @@ func (CVMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	}
 	if chargeType == "PREPAID" {
 		params["InstanceChargePrepaid"] = map[string]interface{}{
-			"Period":    getInt(r.After, "instance_charge_type_prepaid_period"),
+			// Always price a single month: cloudtab reports a monthly run-rate
+			// and the PREPAID DiscountPrice is a period total, so Period=1
+			// keeps it monthly.
+			"Period":    1,
 			"RenewFlag": getStr(r.After, "instance_charge_type_prepaid_renew_flag"),
 		}
 	}

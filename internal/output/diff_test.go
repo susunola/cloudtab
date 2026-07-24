@@ -47,6 +47,35 @@ func TestRenderDiffTableMixedCurrency(t *testing.T) {
 	}
 }
 
+// The markdown (PR-comment) renderer must follow the same rule as the table: a
+// diff spanning two currencies must not present a single summed headline total.
+func TestRenderDiffMarkdownMixedCurrency(t *testing.T) {
+	before := Report{Resources: []ResourceCost{
+		rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100),
+	}}
+	after := Report{Resources: []ResourceCost{
+		rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100),
+		rcCur("aws_instance.b", "aws_instance", "USD", 20),
+	}}
+	d := ComputeDiff(before, after)
+	if d.Currency != "" {
+		t.Fatalf("Currency = %q, want empty (mixed)", d.Currency)
+	}
+
+	var buf bytes.Buffer
+	if err := RenderDiff(&buf, d, "markdown"); err != nil {
+		t.Fatalf("RenderDiff: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "mixed currencies") {
+		t.Errorf("markdown should flag mixed currencies, got:\n%s", out)
+	}
+	// The headline must not present the summed CNY+USD total (100 + 20 = 120).
+	if strings.Contains(out, "120.00") {
+		t.Errorf("markdown summed mixed-currency totals (found 120.00):\n%s", out)
+	}
+}
+
 func rc(addr, typ string, monthly float64) ResourceCost {
 	return ResourceCost{
 		Address: addr,

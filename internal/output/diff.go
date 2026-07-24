@@ -172,12 +172,16 @@ func renderDiffTable(w io.Writer, d DiffReport) error {
 func renderDiffMarkdown(w io.Writer, d DiffReport) error {
 	fmt.Fprintln(w, "## 💰 cloudtab — Cloud cost estimate")
 	fmt.Fprintln(w)
-	curStr := d.Currency
-	if curStr == "" {
-		curStr = "(mixed currencies)"
+	// Only surface a single summed total when every priced component shares one
+	// currency; a mixed CNY+USD sum is meaningless, so (as in the table footer)
+	// we omit the figures instead of presenting an incomparable total.
+	if d.Currency == "" {
+		fmt.Fprintln(w, "**Monthly change:** _(mixed currencies — totals not summed)_")
+		fmt.Fprintln(w)
+	} else {
+		fmt.Fprintf(w, "**Monthly change:** `%+.2f %s` (before `%.2f` → after `%.2f`)\n\n",
+			d.DeltaTotal, d.Currency, d.BeforeTotal, d.AfterTotal)
 	}
-	fmt.Fprintf(w, "**Monthly change:** `%+.2f %s` (before `%.2f` → after `%.2f`)\n\n",
-		d.DeltaTotal, curStr, d.BeforeTotal, d.AfterTotal)
 	fmt.Fprintln(w, "|  | Resource | Before | After | Δ Monthly |")
 	fmt.Fprintln(w, "|---|---|---:|---:|---:|")
 	for _, r := range d.Resources {

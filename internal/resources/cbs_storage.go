@@ -43,7 +43,10 @@ func (CBSStorage) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}
 	if chargeType == "PREPAID" {
 		params["DiskChargePrepaid"] = map[string]interface{}{
-			"Period": getInt(r.After, "prepaid_period"),
+			// Always price a single month: cloudtab reports a monthly run-rate
+			// and the PREPAID DiscountPrice is a period total, so Period=1
+			// keeps it monthly.
+			"Period": 1,
 		}
 	}
 

@@ -54,15 +54,11 @@ func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}
 
 	if chargeType == "PREPAID" {
-		period := getInt(r.After, "prepaid_period")
-		if period <= 0 {
-			period = getInt(r.After, "period")
-		}
-		if period <= 0 {
-			period = 1
-		}
 		params["InstanceChargePrepaid"] = map[string]interface{}{
-			"Period":    period,
+			// Always price a single month: cloudtab reports a monthly run-rate
+			// and the PREPAID DiscountPrice is a period total, so Period=1
+			// keeps it monthly.
+			"Period":    1,
 			"RenewFlag": "NOTIFY_AND_AUTO_RENEW",
 		}
 	}

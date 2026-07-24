@@ -565,6 +565,104 @@ func TestPrepaidPricesSingleMonth(t *testing.T) {
 	if got := cynosReq.Params["TimeUnit"]; got != "m" {
 		t.Errorf("cynos TimeUnit = %v, want m", got)
 	}
+
+	// MySQL: Period must be forced to 1 even with a multi-month prepaid term.
+	mysqlReq, err := (MySQLInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_mysql_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-6", "mem_size": 4000, "volume_size": 200,
+			"charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("mysql extract: %v", err)
+	}
+	if got := mysqlReq.Params["Period"]; got != 1 {
+		t.Errorf("mysql Period = %v, want 1 (multi-month must not leak)", got)
+	}
+
+	// PostgreSQL: Period must be forced to 1.
+	pgReq, err := (PostgreSQLInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_postgresql_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "spec_code": "pg.it2.large", "storage": 100,
+			"instance_charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("postgres extract: %v", err)
+	}
+	if got := pgReq.Params["Period"]; got != 1 {
+		t.Errorf("postgres Period = %v, want 1 (multi-month must not leak)", got)
+	}
+
+	// Redis: Period must be forced to 1.
+	redisReq, err := (RedisInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_redis_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "mem_size": 1024,
+			"charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("redis extract: %v", err)
+	}
+	if got := redisReq.Params["Period"]; got != 1 {
+		t.Errorf("redis Period = %v, want 1 (multi-month must not leak)", got)
+	}
+
+	// CVM: InstanceChargePrepaid.Period must be forced to 1.
+	cvmReq, err := (CVMInstance{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"instance_type": "S5.LARGE8", "image_id": "img-xxx", "availability_zone": "ap-guangzhou-6",
+			"instance_charge_type": "PREPAID", "instance_charge_type_prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("cvm extract: %v", err)
+	}
+	cvmPrepaid, _ := cvmReq.Params["InstanceChargePrepaid"].(map[string]interface{})
+	if cvmPrepaid == nil || cvmPrepaid["Period"] != 1 {
+		t.Errorf("cvm Period = %v, want 1 (multi-month must not leak)", cvmPrepaid)
+	}
+
+	// CBS: DiskChargePrepaid.Period must be forced to 1.
+	cbsReq, err := (CBSStorage{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_cbs_storage",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"storage_type": "CLOUD_PREMIUM", "storage_size": 100, "availability_zone": "ap-guangzhou-6",
+			"charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("cbs extract: %v", err)
+	}
+	cbsPrepaid, _ := cbsReq.Params["DiskChargePrepaid"].(map[string]interface{})
+	if cbsPrepaid == nil || cbsPrepaid["Period"] != 1 {
+		t.Errorf("cbs Period = %v, want 1 (multi-month must not leak)", cbsPrepaid)
+	}
+
+	// VPN: InstanceChargePrepaid.Period must be forced to 1.
+	vpnReq, err := (VPNGateway{}).Extract(parser.PlannedResource{
+		Type:   "tencentcloud_vpn_gateway",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"bandwidth": 100, "charge_type": "PREPAID", "prepaid_period": 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("vpn extract: %v", err)
+	}
+	vpnPrepaid, _ := vpnReq.Params["InstanceChargePrepaid"].(map[string]interface{})
+	if vpnPrepaid == nil || vpnPrepaid["Period"] != 1 {
+		t.Errorf("vpn Period = %v, want 1 (multi-month must not leak)", vpnPrepaid)
+	}
 }
 
 // ----- Lighthouse integration test -----

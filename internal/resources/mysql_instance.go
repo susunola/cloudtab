@@ -59,17 +59,8 @@ func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 
 	chargeType := strings.ToUpper(getStr(r.After, "charge_type"))
 	payType := "HOUR_PAID"
-	period := int64(1)
-	if p := getInt(r.After, "prepaid_period"); p > 0 {
-		period = p
-	} else if p := getInt(r.After, "period"); p > 0 {
-		period = p
-	}
 	if chargeType == "PREPAID" || chargeType == "PRE_PAID" {
 		payType = "PRE_PAID"
-		if period <= 0 {
-			period = 1
-		}
 	}
 
 	params := map[string]interface{}{
@@ -79,7 +70,9 @@ func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 		"GoodsNum":     goodsNum,
 		"InstanceRole": instanceRole,
 		"PayType":      payType,
-		"Period":       period,
+		// Always price a single month: cloudtab reports a monthly run-rate and
+		// the PRE_PAID Price is a period total, so Period=1 keeps it monthly.
+		"Period": 1,
 	}
 	if cpu := getInt(r.After, "cpu"); cpu > 0 {
 		params["Cpu"] = cpu

@@ -146,6 +146,43 @@ the v0.3.2 binaries returned **zero prices** for CVM/CBS/CLB.
 ### Tests
 - All 55 mappers pass `go vet` and `go test -race` (5/5 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.4" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.4 — Prepaid period-total fix + engine panic hardening
+
+Patch release from a fresh review round: one crash-class engine bug and a
+class of cost-inflation bugs in the Tencent prepaid mappers.
+
+### Cost correctness — PREPAID period totals (6 Tencent mappers)
+A multi-month prepaid term was passed straight to the pricing API, whose
+response is a **period total**; the mapper then reported that N-month total as
+a single month, overstating the monthly run-rate ~N×. All six now force a
+single-month period, matching the convention already used by the other mappers
+(SQL Server / MariaDB / MongoDB / DCDB / Lighthouse / CynosDB / CloudHSM):
+
+- **CVM** (`tencentcloud_instance`), **CBS** (`tencentcloud_cbs_storage`),
+  **VPN gateway** (`tencentcloud_vpn_gateway`) — `Period` forced to 1.
+- **MySQL** (`tencentcloud_mysql_instance`), **PostgreSQL**
+  (`tencentcloud_postgresql_instance`), **Redis** (`tencentcloud_redis_instance`)
+  — `Period` forced to 1.
+
+### Engine robustness
+- A panic inside a pricing dispatch no longer deadlocks concurrent duplicate
+  requests. The in-flight entry is always cleared and its waiters released
+  (previously one panicking dispatch could hang the whole run and poison the
+  dedup key); the panic is surfaced as an error to all callers instead.
+
+### Output
+- `diff` markdown (PR comment) no longer prints a summed headline total when a
+  report mixes currencies (e.g. CNY + USD) — it flags the mix like the table
+  renderer instead of presenting a meaningless sum.
+
+### Tests
+- New regression tests: prepaid `Period` forced to 1 for all six mappers;
+  dedup waiters released on dispatch panic; markdown mixed-currency total
+  suppressed.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

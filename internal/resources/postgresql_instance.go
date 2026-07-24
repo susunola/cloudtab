@@ -46,21 +46,15 @@ func (PostgreSQLInstance) Extract(r parser.PlannedResource) (pricing.PriceReques
 		chargeType = "POSTPAID_BY_HOUR"
 	}
 
-	period := getInt(r.After, "prepaid_period")
-	if period <= 0 {
-		period = getInt(r.After, "period")
-	}
-	if period <= 0 {
-		period = 1
-	}
-
 	params := map[string]interface{}{
 		"Zone":               zone,
 		"SpecCode":           specCode,
 		"Storage":            storage,
 		"InstanceCount":      instanceCount,
 		"InstanceChargeType": chargeType,
-		"Period":             period,
+		// Always price a single month: cloudtab reports a monthly run-rate and
+		// the PREPAID price is a period total, so Period=1 keeps it monthly.
+		"Period": 1,
 	}
 
 	return pricing.PriceRequest{
