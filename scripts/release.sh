@@ -114,6 +114,38 @@ produced empty/obviously-wrong prices:
 
 > Still worth a live-API confirmation when credentials are handy: Alibaba VPN `Bandwidth` config format (applied doc-consistent `Bandwidth:<mbps>`), and a real Huawei EIP by-traffic quote. Everything else is doc-aligned.
 EOF
+elif [[ "$VERSION" == "v0.3.3" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.3 — Tencent pricing fixes + English localization
+
+This release folds in the first community pull request and the team-review
+remediation round. Rebuild recommended for anyone testing Tencent-Cloud plans:
+the v0.3.2 binaries returned **zero prices** for CVM/CBS/CLB.
+
+### Tencent Cloud pricing (PR #1)
+- **CVM / CBS / CLB**: `Parse()` now unwraps the `{"Response":{...}}` envelope
+  instead of reading top-level fields — previously every price came back **0**.
+  Currency is read from the API response rather than hardcoded CNY.
+- **CLB**: `Extract()` now sends the required `LoadBalancerChargeType`
+  (was failing with `MissingParameter`).
+- **MongoDB**: adds the mandatory `ClusterType="REPLSET"` + `ReplicateSetNum=1`
+  defaults so quotes succeed.
+
+### Multi-cloud correctness & robustness (team-review round)
+- Cache-open failures now warn on stderr instead of failing silently.
+- Diff output de-branded (no vendor-specific title), merges skipped resources.
+- Alibaba SDK read/connect timeouts wired through (was missed in v0.3.1).
+- MySQL / PostgreSQL fall back to `OriginalPrice` when discounted price is absent.
+
+### Project hygiene
+- Full English localization: all code comments translated; internal Chinese
+  design/review docs removed; English README + visual architecture kept as the
+  public docs.
+- `scripts/release.sh` uses the ambient `go` toolchain (no hardcoded paths).
+
+### Tests
+- All 55 mappers pass `go vet` and `go test -race` (5/5 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
