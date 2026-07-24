@@ -55,26 +55,50 @@ func (CBSStorage) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
+// cbsDiskPrice is the nested disk price structure returned by the CBS
+// InquiryPriceCreateDisks API.
+type cbsDiskPrice struct {
+	UnitPrice         float64 `json:"UnitPrice"`
+	UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+	OriginalPrice     float64 `json:"OriginalPrice"`
+	DiscountPrice     float64 `json:"DiscountPrice"`
+	ChargeUnit        string  `json:"ChargeUnit"`
+	Currency          string  `json:"Currency"`
+}
+
 func (CBSStorage) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	// The Tencent Cloud SDK wraps real responses under a "Response" key.
+	// Support both the wrapped format (real API) and the unwrapped format
+	// (test mocks) for robustness.
 	var wrap struct {
-		DiskPrice struct {
-			UnitPrice         float64 `json:"UnitPrice"`
-			UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-			OriginalPrice     float64 `json:"OriginalPrice"`
-			DiscountPrice     float64 `json:"DiscountPrice"`
-			ChargeUnit        string  `json:"ChargeUnit"`
-		} `json:"DiskPrice"`
+		DiskPrice cbsDiskPrice `json:"DiskPrice"`
+		Response  struct {
+			DiskPrice cbsDiskPrice `json:"DiskPrice"`
+		} `json:"Response"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, err
 	}
+
+	// Prefer the Response-wrapped price when it carries data.
 	dp := wrap.DiskPrice
+	if wrap.Response.DiskPrice.UnitPriceDiscount > 0 ||
+		wrap.Response.DiskPrice.DiscountPrice > 0 ||
+		wrap.Response.DiskPrice.UnitPrice > 0 {
+		dp = wrap.Response.DiskPrice
+	}
+
+	currency := dp.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+
 	monthly, hourly := monthlyFromPrice(dp.ChargeUnit, dp.UnitPriceDiscount, dp.DiscountPrice)
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("CBS %v (%vGB)", req.Params["DiskType"], req.Params["DiskSize"]),
 		Unit:        dp.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    currency,
 	}}, nil
 }

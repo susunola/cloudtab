@@ -31,9 +31,19 @@ func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 		chargeType = "TRAFFIC_POSTPAID_BY_HOUR"
 	}
 
+	// LoadBalancerChargeType is required by the InquiryPriceCreateLoadBalancer
+	// API. The Terraform provider does not expose a dedicated field for this;
+	// the tencentcloud_clb_instance resource is always pay-as-you-go, so we
+	// default to "POSTPAID".
+	lbChargeType := getStr(r.After, "load_balancer_charge_type")
+	if lbChargeType == "" {
+		lbChargeType = "POSTPAID"
+	}
+
 	params := map[string]interface{}{
-		"LoadBalancerType": lbType,
-		"GoodsNum":         1,
+		"LoadBalancerType":       lbType,
+		"LoadBalancerChargeType": lbChargeType,
+		"GoodsNum":               1,
 	}
 	if forward != "" {
 		params["Forward"] = forward
@@ -56,27 +66,52 @@ func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	}, nil
 }
 
+// clbPriceBlock is the nested price structure returned by the CLB
+// InquiryPriceCreateLoadBalancer API.
+type clbPriceBlock struct {
+	InstancePrice struct {
+		UnitPrice         float64 `json:"UnitPrice"`
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		OriginalPrice     float64 `json:"OriginalPrice"`
+		DiscountPrice     float64 `json:"DiscountPrice"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+		Currency          string  `json:"Currency"`
+	} `json:"InstancePrice"`
+	BandwidthPrice struct {
+		UnitPrice         float64 `json:"UnitPrice"`
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+	} `json:"BandwidthPrice"`
+}
+
 func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	// The Tencent Cloud SDK wraps real responses under a "Response" key.
+	// Support both the wrapped format (real API) and the unwrapped format
+	// (test mocks) for robustness.
 	var wrap struct {
-		Price struct {
-			InstancePrice struct {
-				UnitPrice         float64 `json:"UnitPrice"`
-				UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-				OriginalPrice     float64 `json:"OriginalPrice"`
-				DiscountPrice     float64 `json:"DiscountPrice"`
-				ChargeUnit        string  `json:"ChargeUnit"`
-			} `json:"InstancePrice"`
-			BandwidthPrice struct {
-				UnitPrice         float64 `json:"UnitPrice"`
-				UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-				ChargeUnit        string  `json:"ChargeUnit"`
-			} `json:"BandwidthPrice"`
-		} `json:"Price"`
+		Price    clbPriceBlock `json:"Price"`
+		Response struct {
+			Price clbPriceBlock `json:"Price"`
+		} `json:"Response"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, err
 	}
-	ip := wrap.Price.InstancePrice
+
+	// Prefer the Response-wrapped price when it carries data.
+	price := wrap.Price
+	if wrap.Response.Price.InstancePrice.UnitPriceDiscount > 0 ||
+		wrap.Response.Price.InstancePrice.DiscountPrice > 0 ||
+		wrap.Response.Price.InstancePrice.UnitPrice > 0 {
+		price = wrap.Response.Price
+	}
+
+	currency := price.InstancePrice.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+
+	ip := price.InstancePrice
 	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPriceDiscount, ip.DiscountPrice)
 	label := fmt.Sprintf("CLB (%v)", req.Params["LoadBalancerType"])
 	comps := []output.CostComponent{{
@@ -84,17 +119,17 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		Unit:        ip.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    currency,
 	}}
-	if wrap.Price.BandwidthPrice.UnitPrice > 0 {
-		bw := wrap.Price.BandwidthPrice
+	if price.BandwidthPrice.UnitPrice > 0 {
+		bw := price.BandwidthPrice
 		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, 0)
 		comps = append(comps, output.CostComponent{
 			Name:        "CLB bandwidth",
 			Unit:        bw.ChargeUnit,
 			HourlyCost:  bwHourly,
 			MonthlyCost: bwMonthly,
-			Currency:    "CNY",
+			Currency:    currency,
 		})
 	}
 	return comps, nil

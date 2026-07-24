@@ -72,9 +72,21 @@ func (MongoDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 	if m := getStr(r.After, "machine_type"); m != "" {
 		params["MachineCode"] = m
 	}
+	// The Terraform provider uses separate resource types for replica-set vs
+	// sharding clusters and does NOT expose a "cluster_type" attribute.
+	//   - tencentcloud_mongodb_instance            → REPLSET
+	//   - tencentcloud_mongodb_sharding_instance    → SHARD
+	// We read the field first for forward-compat, then fall back to REPLSET
+	// since this handler is registered for tencentcloud_mongodb_instance.
 	if c := getStr(r.After, "cluster_type"); c != "" {
 		params["ClusterType"] = c
+	} else {
+		params["ClusterType"] = "REPLSET"
 	}
+
+	// ReplicateSetNum is required by InquirePriceCreateDBInstances.
+	// For REPLSET (tencentcloud_mongodb_instance) it is always 1.
+	params["ReplicateSetNum"] = 1
 
 	return pricing.PriceRequest{
 		Product: "mongodb",
