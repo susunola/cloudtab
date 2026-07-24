@@ -514,155 +514,144 @@ func TestCynosDBPostpaidHourly(t *testing.T) {
 // TestPrepaidPricesSingleMonth guards against the period-total inflation bug:
 // even when the user configures a multi-month prepaid term, the pricing request
 // must ask for a single month so the returned price equals the monthly cost.
+// TestPrepaidPricesSingleMonth enforces the universal invariant that a PREPAID
+// Tencent instance is always priced as exactly one month of run-rate — never a
+// multi-month total. This is the regression net for the bug that hid in six
+// mappers for several releases.
+//
+// Unlike the original hand-written test (which pinned nine specific types), this
+// version is table-driven over EVERY prepaid-capable Tencent type and asserts
+// the rule generically: every "Period" (top-level or nested in a *ChargePrepaid
+// map) and every "TimeSpan" found anywhere in the request must equal 1. Adding a
+// new prepaid type = one line in the table; the invariant is checked uniformly.
 func TestPrepaidPricesSingleMonth(t *testing.T) {
-	// MongoDB: Period must be forced to 1 regardless of prepaid_period.
-	mongoReq, err := (MongoDBInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_mongodb_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"available_zone": "ap-guangzhou-3", "memory": 4, "volume": 100,
-			"charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("mongo extract: %v", err)
-	}
-	if got := mongoReq.Params["Period"]; got != 1 {
-		t.Errorf("mongo Period = %v, want 1 (multi-month must not leak)", got)
-	}
-
-	// MariaDB: Period must be forced to 1.
-	mariaReq, err := (MariaDBInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_mariadb_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
-			"charge_type": "PREPAID", "period": 36,
-		},
-	})
-	if err != nil {
-		t.Fatalf("maria extract: %v", err)
-	}
-	if got := mariaReq.Params["Period"]; got != 1 {
-		t.Errorf("maria Period = %v, want 1", got)
-	}
-
-	// CynosDB: TimeSpan must be forced to 1 month for PREPAID.
-	cynosReq, err := (CynosDBCluster{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_cynosdb_cluster",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
-			"charge_type": "PREPAID", "prepaid_period": 24,
-		},
-	})
-	if err != nil {
-		t.Fatalf("cynos extract: %v", err)
-	}
-	if got := cynosReq.Params["TimeSpan"]; got != 1 {
-		t.Errorf("cynos TimeSpan = %v, want 1", got)
-	}
-	if got := cynosReq.Params["TimeUnit"]; got != "m" {
-		t.Errorf("cynos TimeUnit = %v, want m", got)
-	}
-
-	// MySQL: Period must be forced to 1 even with a multi-month prepaid term.
-	mysqlReq, err := (MySQLInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_mysql_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-6", "mem_size": 4000, "volume_size": 200,
-			"charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("mysql extract: %v", err)
-	}
-	if got := mysqlReq.Params["Period"]; got != 1 {
-		t.Errorf("mysql Period = %v, want 1 (multi-month must not leak)", got)
-	}
-
-	// PostgreSQL: Period must be forced to 1.
-	pgReq, err := (PostgreSQLInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_postgresql_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3", "spec_code": "pg.it2.large", "storage": 100,
-			"instance_charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("postgres extract: %v", err)
-	}
-	if got := pgReq.Params["Period"]; got != 1 {
-		t.Errorf("postgres Period = %v, want 1 (multi-month must not leak)", got)
-	}
-
-	// Redis: Period must be forced to 1.
-	redisReq, err := (RedisInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_redis_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3", "mem_size": 1024,
-			"charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("redis extract: %v", err)
-	}
-	if got := redisReq.Params["Period"]; got != 1 {
-		t.Errorf("redis Period = %v, want 1 (multi-month must not leak)", got)
-	}
-
-	// CVM: InstanceChargePrepaid.Period must be forced to 1.
-	cvmReq, err := (CVMInstance{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_instance",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
+	cases := []struct {
+		name string
+		res  parser.PlannedResource
+	}{
+		{"cvm", parser.PlannedResource{Type: "tencentcloud_instance", Region: "ap-guangzhou", After: map[string]interface{}{
 			"instance_type": "S5.LARGE8", "image_id": "img-xxx", "availability_zone": "ap-guangzhou-6",
-			"instance_charge_type": "PREPAID", "instance_charge_type_prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("cvm extract: %v", err)
-	}
-	cvmPrepaid, _ := cvmReq.Params["InstanceChargePrepaid"].(map[string]interface{})
-	if cvmPrepaid == nil || cvmPrepaid["Period"] != 1 {
-		t.Errorf("cvm Period = %v, want 1 (multi-month must not leak)", cvmPrepaid)
-	}
-
-	// CBS: DiskChargePrepaid.Period must be forced to 1.
-	cbsReq, err := (CBSStorage{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_cbs_storage",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
+			"instance_charge_type": "PREPAID", "instance_charge_type_prepaid_period": 12}}},
+		{"cbs", parser.PlannedResource{Type: "tencentcloud_cbs_storage", Region: "ap-guangzhou", After: map[string]interface{}{
 			"storage_type": "CLOUD_PREMIUM", "storage_size": 100, "availability_zone": "ap-guangzhou-6",
-			"charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("cbs extract: %v", err)
-	}
-	cbsPrepaid, _ := cbsReq.Params["DiskChargePrepaid"].(map[string]interface{})
-	if cbsPrepaid == nil || cbsPrepaid["Period"] != 1 {
-		t.Errorf("cbs Period = %v, want 1 (multi-month must not leak)", cbsPrepaid)
+			"charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"mysql", parser.PlannedResource{Type: "tencentcloud_mysql_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-6", "mem_size": 4000, "volume_size": 200,
+			"charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"postgresql", parser.PlannedResource{Type: "tencentcloud_postgresql_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "spec_code": "pg.it2.large", "storage": 100,
+			"instance_charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"redis", parser.PlannedResource{Type: "tencentcloud_redis_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "mem_size": 1024,
+			"charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"vpn", parser.PlannedResource{Type: "tencentcloud_vpn_gateway", Region: "ap-guangzhou", After: map[string]interface{}{
+			"bandwidth": 100, "charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"mongodb", parser.PlannedResource{Type: "tencentcloud_mongodb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "memory": 4, "volume": 100,
+			"charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"mariadb", parser.PlannedResource{Type: "tencentcloud_mariadb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
+			"charge_type": "PREPAID", "period": 36}}},
+		{"cynosdb", parser.PlannedResource{Type: "tencentcloud_cynosdb_cluster", Region: "ap-guangzhou", After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"charge_type": "PREPAID", "prepaid_period": 24}}},
+		{"lighthouse", parser.PlannedResource{Type: "tencentcloud_lighthouse_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"bundle_id": "bundle_xxx", "instance_count": 1}}},
+		{"sqlserver", parser.PlannedResource{Type: "tencentcloud_sqlserver_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
+			"charge_type": "PREPAID", "prepaid_period": 12}}},
+		{"dcdb", parser.PlannedResource{Type: "tencentcloud_dcdb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200, "shard_count": 2,
+			"instance_charge_type": "PREPAID"}}},
+		{"yunjing", parser.PlannedResource{Type: "tencentcloud_cwp_license_order", Region: "ap-guangzhou", After: map[string]interface{}{}}},
+		{"cloudhsm", parser.PlannedResource{Type: "tencentcloud_cloudhsm_instance", Region: "ap-guangzhou", After: map[string]interface{}{}}},
 	}
 
-	// VPN: InstanceChargePrepaid.Period must be forced to 1.
-	vpnReq, err := (VPNGateway{}).Extract(parser.PlannedResource{
-		Type:   "tencentcloud_vpn_gateway",
-		Region: "ap-guangzhou",
-		After: map[string]interface{}{
-			"bandwidth": 100, "charge_type": "PREPAID", "prepaid_period": 12,
-		},
-	})
-	if err != nil {
-		t.Fatalf("vpn extract: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, ok := DefaultRegistry().Lookup(tc.res.Type)
+			if !ok {
+				t.Fatalf("type %s not registered", tc.res.Type)
+			}
+			req, err := entry.Extract(tc.res)
+			if err != nil {
+				t.Fatalf("Extract() error = %v", err)
+			}
+			periods, timeSpans, timeUnits := collectPeriodFields(req.Params)
+			if len(periods) == 0 && len(timeSpans) == 0 {
+				t.Fatalf("no Period/TimeSpan found in request for %s — prepaid term not asserted", tc.name)
+			}
+			for _, p := range periods {
+				if p != 1 {
+					t.Errorf("%s: Period = %v, want 1 (multi-month must not leak)", tc.name, p)
+				}
+			}
+			for _, ts := range timeSpans {
+				if ts != 1 {
+					t.Errorf("%s: TimeSpan = %v, want 1", tc.name, ts)
+				}
+			}
+			if len(timeSpans) > 0 && !containsStr(timeUnits, "m") {
+				t.Errorf("%s: TimeSpan present but TimeUnit != \"m\" (%v)", tc.name, timeUnits)
+			}
+		})
 	}
-	vpnPrepaid, _ := vpnReq.Params["InstanceChargePrepaid"].(map[string]interface{})
-	if vpnPrepaid == nil || vpnPrepaid["Period"] != 1 {
-		t.Errorf("vpn Period = %v, want 1 (multi-month must not leak)", vpnPrepaid)
+}
+
+// collectPeriodFields walks a request-params map recursively and returns every
+// Period value, every TimeSpan value, and every TimeUnit string found (at any
+// nesting depth). Values are normalized to int so int/int64/string "1" all
+// compare as 1.
+func collectPeriodFields(params map[string]interface{}) (periods, timeSpans []int, timeUnits []string) {
+	var walk func(m map[string]interface{})
+	walk = func(m map[string]interface{}) {
+		for k, v := range m {
+			switch k {
+			case "Period":
+				if n, ok := toInt(v); ok {
+					periods = append(periods, n)
+				}
+			case "TimeSpan":
+				if n, ok := toInt(v); ok {
+					timeSpans = append(timeSpans, n)
+				}
+			case "TimeUnit":
+				if s, ok := v.(string); ok {
+					timeUnits = append(timeUnits, s)
+				}
+			}
+			if nested, ok := v.(map[string]interface{}); ok {
+				walk(nested)
+			}
+		}
 	}
+	walk(params)
+	return periods, timeSpans, timeUnits
+}
+
+func toInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case string:
+		if n == "1" {
+			return 1, true
+		}
+	}
+	return 0, false
+}
+
+func containsStr(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ----- Lighthouse integration test -----
@@ -1029,30 +1018,96 @@ func TestEIPEstimate(t *testing.T) {
 
 // ----- Registry lookup test -----
 
+// expectedAllTypes is the canonical, exhaustive set of resource types that must
+// be registered. Ordered so the list is reviewable. This guards against two
+// failure modes that a partial list misses:
+//  1. a mapper is implemented but forgotten in DefaultRegistry (lookup fails);
+//  2. the registry drifts (a type removed, or an extra/duplicate registered).
+//
+// If you add a new mapper, you MUST update this list — that friction is the point.
+var expectedAllTypes = []string{
+	// Alibaba Cloud (9)
+	"alicloud_db_instance",
+	"alicloud_disk",
+	"alicloud_eip",
+	"alicloud_instance",
+	"alicloud_kvstore_instance",
+	"alicloud_mongodb_instance",
+	"alicloud_nat_gateway",
+	"alicloud_slb_load_balancer",
+	"alicloud_vpn_gateway",
+	// AWS (21)
+	"aws_db_instance",
+	"aws_docdb_cluster_instance",
+	"aws_dynamodb_table",
+	"aws_ebs_volume",
+	"aws_eks_cluster",
+	"aws_elasticache_cluster",
+	"aws_elasticsearch_domain",
+	"aws_elb",
+	"aws_instance",
+	"aws_lb",
+	"aws_memorydb_cluster",
+	"aws_mq_broker",
+	"aws_msk_cluster",
+	"aws_nat_gateway",
+	"aws_neptune_cluster_instance",
+	"aws_opensearch_domain",
+	"aws_rds_cluster_instance",
+	"aws_redshift_cluster",
+	// Huawei Cloud (9)
+	"huaweicloud_cce_cluster",
+	"huaweicloud_compute_instance",
+	"huaweicloud_dcs_instance",
+	"huaweicloud_dds_instance",
+	"huaweicloud_elb_loadbalancer",
+	"huaweicloud_evs_volume",
+	"huaweicloud_nat_gateway",
+	"huaweicloud_rds_instance",
+	"huaweicloud_vpc_eip",
+	// Tencent Cloud (19 — note: cwp_license_order == tencentcloud_cwp_license_order)
+	"tencentcloud_cbs_storage",
+	"tencentcloud_clb_instance",
+	"tencentcloud_cloudhsm_instance",
+	"tencentcloud_cwp_license_order",
+	"tencentcloud_cynosdb_cluster",
+	"tencentcloud_dcdb_instance",
+	"tencentcloud_domain_registration",
+	"tencentcloud_ecm_instance",
+	"tencentcloud_eip",
+	"tencentcloud_gaap_proxy",
+	"tencentcloud_instance",
+	"tencentcloud_lighthouse_instance",
+	"tencentcloud_mariadb_instance",
+	"tencentcloud_mongodb_instance",
+	"tencentcloud_mysql_instance",
+	"tencentcloud_postgresql_instance",
+	"tencentcloud_redis_instance",
+	"tencentcloud_sqlserver_instance",
+	"tencentcloud_vpn_gateway",
+}
+
 func TestDefaultRegistryHasAllTypes(t *testing.T) {
 	reg := DefaultRegistry()
-	types := []string{
-		"tencentcloud_instance",
-		"tencentcloud_cbs_storage",
-		"tencentcloud_eip",
-		"tencentcloud_clb_instance",
-		"tencentcloud_mysql_instance",
-		"tencentcloud_postgresql_instance",
-		"tencentcloud_redis_instance",
-		"tencentcloud_vpn_gateway",
-		"tencentcloud_mongodb_instance",
-		"tencentcloud_mariadb_instance",
-		"tencentcloud_cynosdb_cluster",
-		"tencentcloud_lighthouse_instance",
-		"tencentcloud_ecm_instance",
-		"tencentcloud_sqlserver_instance",
-		"tencentcloud_dcdb_instance",
-		"tencentcloud_gaap_proxy",
-	}
-	for _, tfType := range types {
-		if _, ok := reg.Lookup(tfType); !ok {
-			t.Errorf("DefaultRegistry missing type: %s", tfType)
+
+	// Forward guard: every expected type must be registered.
+	got := make(map[string]bool, len(expectedAllTypes))
+	for _, typ := range expectedAllTypes {
+		if _, ok := reg.Lookup(typ); !ok {
+			t.Errorf("DefaultRegistry missing type: %s", typ)
 		}
+		got[typ] = true
+	}
+
+	// Reverse guard: registry must contain exactly expectedAllTypes, nothing more
+	// (catches forgotten removals and accidental extras/duplicates).
+	for _, name := range reg.Keys() {
+		if !got[name] {
+			t.Errorf("DefaultRegistry contains unexpected/duplicate type not in expectedAllTypes: %s", name)
+		}
+	}
+	if reg.Len() != len(expectedAllTypes) {
+		t.Errorf("DefaultRegistry size = %d, want %d (expectedAllTypes)", reg.Len(), len(expectedAllTypes))
 	}
 }
 

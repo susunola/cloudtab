@@ -212,6 +212,46 @@ Patch release from a review round: two small output fixes plus CI/repo cleanup.
 - New: markdown skipped-reason grouping; deterministic skipped ordering.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.6" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.6 — Test hardening (prevent the bug class, not one bug)
+
+Follows up on the v0.3.3–v0.3.5 fixes with a test-coverage pass aimed at
+stopping whole *classes* of bug from recurring, using few high-leverage tests
+that each guard many scenarios at once.
+
+### New test coverage
+- **GAP1 — Tencent request-body snapshot test** (`TestTencentMapperRequestBodies`):
+  Huawei and Alibaba already had these; Tencent (19 mappers) did not — which is
+  exactly why the PREPAID `Period` bug hid in six mappers. The test now locks the
+  exact `Product`/`Action` and price-determining params for every Tencent mapper,
+  and asserts the period is a single month (`Period=1` / `TimeSpan=1`) for every
+  prepaid-capable one. **One test guards all 19 mappers.**
+- **GAP2 — exhaustive registry + prepaid guards**: `TestDefaultRegistryHasAllTypes`
+  now asserts the registry contains *exactly* the canonical 55 types in both
+  directions (missing, extra, or duplicate registrations all fail), backed by new
+  `Registry.Len()`/`Keys()` accessors. `TestPrepaidPricesSingleMonth` is rewritten
+  as a table-driven test over all 14 prepaid-capable Tencent types asserting a
+  generic "every Period/TimeSpan == 1" invariant — adding a new prepaid type is
+  one table row, not a new bespoke test.
+- **GAP5 — renderer shared-convention test** (`TestRenderersSharedConventions`):
+  one mixed-currency report with real (varied) skip reasons is rendered through
+  *every* renderer (non-diff table + JSON, diff table + markdown) and asserts the
+  same two invariants everywhere — mixed currencies are never summed into a single
+  total, and every skipped resource's real reason is surfaced verbatim (never a
+  blanket "unsupported type"). Also asserts renderer determinism.
+- **GAP4 — live smoke scaffold** (`cmd/cloudtab/live_test.go`, build tag `live`):
+  drives the real `priceReport` pipeline for whichever providers have credentials
+  in the env. Never runs in CI; run manually with
+  `go test -tags live -run TestLivePricingSmoke ./cmd/cloudtab/`.
+
+### Engine note
+- The dispatch panic-recovery (P0 fix in v0.3.4) is already covered by
+  `TestInflightDedupReleasesWaitersOnPanic`; no new test needed.
+
+### Tests
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

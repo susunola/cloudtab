@@ -219,3 +219,115 @@ func TestComputeDiffEmpty(t *testing.T) {
 		t.Errorf("DeltaTotal = %v, want 0", d.DeltaTotal)
 	}
 }
+
+// TestRenderersSharedConventions is the single "shared convention" test the gap
+// analysis called for: one mixed-currency report with skipped resources that
+// carry REAL reasons (auth failure, unsupported type, panic) is rendered through
+// EVERY renderer — non-diff table, non-diff JSON, diff table, diff markdown —
+// and all of them must honour the same two invariants:
+//
+//  1. Mixed currencies are never summed into a single meaningless TOTAL. The
+//     existing tests only checked RenderDiff; the non-diff Render(table) guard
+//     in report.go had no test, so a regression there would have slipped through.
+//  2. Every skipped resource's real reason is surfaced verbatim (never a blanket
+//     "unsupported type"); the non-diff table path was also previously untested.
+//
+// It also asserts renderer determinism (re-rendering yields identical bytes) and
+// that the JSON path preserves per-resource currency + skip reasons. One test,
+// every renderer, maximum coverage.
+func TestRenderersSharedConventions(t *testing.T) {
+	// Mixed currency: CNY + USD priced resources in one report.
+	rep := Report{
+		Resources: []ResourceCost{
+			rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100),
+			rcCur("aws_instance.b", "aws_instance", "USD", 20),
+		},
+		// Real, varied skip reasons — must not collapse to "unsupported type".
+		Skipped: []SkippedResource{
+			{Address: "tencentcloud_instance.auth", Type: "tencentcloud_instance", Reason: "AuthFailure: invalid secret id"},
+			{Address: "aws_instance.unsup", Type: "aws_instance", Reason: "unsupported resource type"},
+			{Address: "tencentcloud_cbs_storage.panic", Type: "tencentcloud_cbs_storage", Reason: "panic pricing cbs.x: boom"},
+		},
+	}
+
+	// 1) Non-diff table renderer: mixed guard + real skip reasons.
+	var tbl bytes.Buffer
+	if err := Render(&tbl, rep, "table"); err != nil {
+		t.Fatalf("Render table: %v", err)
+	}
+	tblOut := tbl.String()
+	if !strings.Contains(strings.ToLower(tblOut), "mixed currencies") {
+		t.Errorf("non-diff table should flag mixed currencies, got:\n%s", tblOut)
+	}
+	if strings.Contains(tblOut, "120.00") {
+		t.Errorf("non-diff table summed mixed currencies (found 120.00):\n%s", tblOut)
+	}
+	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
+		if !strings.Contains(tblOut, want) {
+			t.Errorf("non-diff table should surface real skip reason %q, got:\n%s", want, tblOut)
+		}
+	}
+	if strings.Contains(tblOut, "(unsupported type)") {
+		t.Errorf("non-diff table still uses hardcoded unsupported-type label:\n%s", tblOut)
+	}
+
+	// Determinism: the non-diff table renders byte-identically on replay.
+	var tbl2 bytes.Buffer
+	if err := Render(&tbl2, rep, "table"); err != nil {
+		t.Fatalf("Render table (2nd): %v", err)
+	}
+	if tbl.String() != tbl2.String() {
+		t.Errorf("non-diff table is non-deterministic:\n--- run1 ---\n%s\n--- run2 ---\n%s", tbl.String(), tbl2.String())
+	}
+
+	// 2) Non-diff JSON renderer: preserves per-resource currency + reasons and
+	// does NOT emit a summed single total figure in the body (totals are per
+	// report; JSON keeps components separate so the consumer decides).
+	var js bytes.Buffer
+	if err := Render(&js, rep, "json"); err != nil {
+		t.Fatalf("Render json: %v", err)
+	}
+	jsRaw := js.Bytes()
+	for _, want := range []string{"\"CNY\"", "\"USD\"", "AuthFailure", "unsupported resource type", "panic pricing"} {
+		if !bytes.Contains(jsRaw, []byte(want)) {
+			t.Errorf("non-diff JSON should preserve %q, got:\n%s", want, jsRaw)
+		}
+	}
+
+	// 3) Diff renderers (table + markdown) must honour the same two invariants.
+	before := Report{Resources: []ResourceCost{rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100)}}
+	after := rep
+	d := ComputeDiff(before, after)
+	if d.Currency != "" {
+		t.Fatalf("diff Currency = %q, want empty (mixed)", d.Currency)
+	}
+
+	var dtbl bytes.Buffer
+	if err := RenderDiff(&dtbl, d, "table"); err != nil {
+		t.Fatalf("RenderDiff table: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(dtbl.String()), "mixed currencies") {
+		t.Errorf("diff table should flag mixed currencies, got:\n%s", dtbl.String())
+	}
+	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
+		if !strings.Contains(dtbl.String(), want) {
+			t.Errorf("diff table should surface real skip reason %q, got:\n%s", want, dtbl.String())
+		}
+	}
+
+	var dmd bytes.Buffer
+	if err := RenderDiff(&dmd, d, "markdown"); err != nil {
+		t.Fatalf("RenderDiff markdown: %v", err)
+	}
+	if !strings.Contains(dmd.String(), "mixed currencies") {
+		t.Errorf("diff markdown should flag mixed currencies, got:\n%s", dmd.String())
+	}
+	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
+		if !strings.Contains(dmd.String(), want) {
+			t.Errorf("diff markdown should surface real skip reason %q, got:\n%s", want, dmd.String())
+		}
+	}
+	if strings.Contains(dmd.String(), "skipped (unsupported type)") {
+		t.Errorf("diff markdown still uses hardcoded unsupported-type label:\n%s", dmd.String())
+	}
+}

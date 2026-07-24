@@ -42,6 +42,18 @@ func (r *Registry) Lookup(tfType string) (Mapper, bool) {
 	return m, ok
 }
 
+// Len returns the number of registered mappers.
+func (r *Registry) Len() int { return len(r.m) }
+
+// Keys returns all registered Terraform resource type names. Order is undefined.
+func (r *Registry) Keys() []string {
+	keys := make([]string, 0, len(r.m))
+	for k := range r.m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // defaultRegistryOnce guards the singleton initialisation of the built-in
 // registry so that repeated calls to DefaultRegistry return the same *Registry.
 var defaultRegistryOnce sync.Once

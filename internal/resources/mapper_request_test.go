@@ -1,11 +1,162 @@
 package resources
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/susunola/cloudtab/internal/parser"
 )
+
+// assertParamsSubset recursively checks that every key in want exists in got
+// with an equal value. Nested maps match recursively so the test can pin a
+// nested field (e.g. ChargePrepaid.Period) without snapshotting the whole
+// request body. Leaf values are compared after JSON normalization so numeric
+// types that differ only in Go type (int vs int64) compare equal.
+func assertParamsSubset(t *testing.T, path string, got, want map[string]interface{}) {
+	t.Helper()
+	for k, wv := range want {
+		gv, ok := got[k]
+		if !ok {
+			t.Errorf("%s: missing param %q", path, k)
+			continue
+		}
+		if wm, ok := wv.(map[string]interface{}); ok {
+			gm, ok := gv.(map[string]interface{})
+			if !ok {
+				t.Errorf("%s: param %q = %v, want a nested map", path, k, gv)
+				continue
+			}
+			assertParamsSubset(t, path+"."+k, gm, wm)
+			continue
+		}
+		wj, _ := json.Marshal(wv)
+		gj, _ := json.Marshal(gv)
+		if string(wj) != string(gj) {
+			t.Errorf("%s: param %q = %v, want %v", path, k, gv, wv)
+		}
+	}
+}
+
+// TestTencentMapperRequestBodies is the Tencent counterpart to
+// TestHuaweiMapperRequestBodies / TestAlibabaMapperRequestBodies: it locks the
+// request each Tencent mapper sends to its pricing API. This is the gap that
+// let the PREPAID period-total bug hide in six mappers — the price is decided
+// by the request, and no test was looking at it. For every mapper we assert the
+// exact Product/Action and the price-determining params, and for every
+// prepaid-capable mapper that the period is forced to a single month
+// (Period=1 / TimeSpan=1) so a multi-month term can never be reported as one
+// month again.
+func TestTencentMapperRequestBodies(t *testing.T) {
+	cases := []struct {
+		name    string
+		m       Mapper
+		res     parser.PlannedResource
+		product string
+		action  string
+		want    map[string]interface{}
+		static  bool // StaticMapper: Extract must refuse (no request body)
+	}{
+		{"cvm", CVMInstance{}, parser.PlannedResource{Type: "tencentcloud_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"instance_type": "S5.LARGE8", "image_id": "img-xxx", "availability_zone": "ap-guangzhou-6",
+			"instance_charge_type": "PREPAID", "instance_charge_type_prepaid_period": 12}},
+			"cvm", "InquiryPriceRunInstances", map[string]interface{}{
+				"InstanceChargeType": "PREPAID", "InstanceChargePrepaid": map[string]interface{}{"Period": 1}}, false},
+		{"cbs", CBSStorage{}, parser.PlannedResource{Type: "tencentcloud_cbs_storage", Region: "ap-guangzhou", After: map[string]interface{}{
+			"storage_type": "CLOUD_PREMIUM", "storage_size": 100, "availability_zone": "ap-guangzhou-6",
+			"charge_type": "PREPAID", "prepaid_period": 12}},
+			"cbs", "InquiryPriceCreateDisks", map[string]interface{}{
+				"DiskChargeType": "PREPAID", "DiskChargePrepaid": map[string]interface{}{"Period": 1}}, false},
+		{"eip", EIP{}, parser.PlannedResource{Type: "tencentcloud_eip", Region: "ap-guangzhou", After: map[string]interface{}{}},
+			"", "", nil, true},
+		{"clb", CLBInstance{}, parser.PlannedResource{Type: "tencentcloud_clb_instance", Region: "ap-guangzhou", After: map[string]interface{}{}},
+			"clb", "InquiryPriceCreateLoadBalancer", map[string]interface{}{
+				"LoadBalancerChargeType": "POSTPAID", "GoodsNum": 1}, false},
+		{"mysql", MySQLInstance{}, parser.PlannedResource{Type: "tencentcloud_mysql_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-6", "mem_size": 4000, "volume_size": 200,
+			"charge_type": "PREPAID", "prepaid_period": 12}},
+			"cdb", "DescribeDBPrice", map[string]interface{}{"PayType": "PRE_PAID", "Period": 1}, false},
+		{"postgresql", PostgreSQLInstance{}, parser.PlannedResource{Type: "tencentcloud_postgresql_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "spec_code": "pg.it2.large", "storage": 100,
+			"instance_charge_type": "PREPAID", "prepaid_period": 12}},
+			"postgres", "InquiryPriceCreateDBInstances", map[string]interface{}{
+				"InstanceChargeType": "PREPAID", "Period": 1}, false},
+		{"redis", RedisInstance{}, parser.PlannedResource{Type: "tencentcloud_redis_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "mem_size": 1024,
+			"charge_type": "PREPAID", "prepaid_period": 12}},
+			"redis", "InquiryPriceCreateInstance", map[string]interface{}{"BillingMode": 1, "Period": 1}, false},
+		{"vpn", VPNGateway{}, parser.PlannedResource{Type: "tencentcloud_vpn_gateway", Region: "ap-guangzhou", After: map[string]interface{}{
+			"bandwidth": 100, "charge_type": "PREPAID", "prepaid_period": 12}},
+			"vpc", "InquiryPriceCreateVpnGateway", map[string]interface{}{
+				"InstanceChargeType": "PREPAID", "InstanceChargePrepaid": map[string]interface{}{"Period": 1}}, false},
+		{"mongodb", MongoDBInstance{}, parser.PlannedResource{Type: "tencentcloud_mongodb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "memory": 4, "volume": 100,
+			"charge_type": "PREPAID", "prepaid_period": 12}},
+			"mongodb", "InquirePriceCreateDBInstances", map[string]interface{}{
+				"Period": 1, "ClusterType": "REPLSET", "ReplicateSetNum": 1}, false},
+		{"mariadb", MariaDBInstance{}, parser.PlannedResource{Type: "tencentcloud_mariadb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
+			"instance_charge_type": "prepaid", "period": 36}},
+			"mariadb", "DescribePrice", map[string]interface{}{
+				"Paymode": "prepaid", "Period": 1, "AmountUnit": "pent"}, false},
+		{"cynosdb", CynosDBCluster{}, parser.PlannedResource{Type: "tencentcloud_cynosdb_cluster", Region: "ap-guangzhou", After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"charge_type": "PREPAID", "prepaid_period": 24}},
+			"cynosdb", "InquirePriceCreate", map[string]interface{}{
+				"InstancePayMode": "PREPAID", "TimeSpan": 1, "TimeUnit": "m"}, false},
+		{"lighthouse", LighthouseInstance{}, parser.PlannedResource{Type: "tencentcloud_lighthouse_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"bundle_id": "bundle_xxx", "instance_count": 1}},
+			"lighthouse", "InquirePriceCreateInstances", map[string]interface{}{
+				"InstanceChargePrepaid": map[string]interface{}{"Period": 1}}, false},
+		{"ecm", ECMInstance{}, parser.PlannedResource{Type: "tencentcloud_ecm_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"instance_type": "S4.MEDIUM4"}},
+			"ecm", "DescribePriceRunInstance", map[string]interface{}{"InstanceChargeType": 1}, false},
+		{"sqlserver", SQLServerInstance{}, parser.PlannedResource{Type: "tencentcloud_sqlserver_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
+			"charge_type": "PREPAID", "prepaid_period": 12}},
+			"sqlserver", "InquiryPriceCreateDBInstances", map[string]interface{}{
+				"InstanceChargeType": "PREPAID", "Period": 1}, false},
+		{"dcdb", DCDBInstance{}, parser.PlannedResource{Type: "tencentcloud_dcdb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200, "shard_count": 2,
+			"instance_charge_type": "PREPAID"}},
+			"dcdb", "DescribeDCDBPrice", map[string]interface{}{
+				"Paymode": "prepaid", "Period": 1, "AmountUnit": "pent"}, false},
+		{"gaap", GAAPProxy{}, parser.PlannedResource{Type: "tencentcloud_gaap_proxy", Region: "ap-guangzhou", After: map[string]interface{}{
+			"access_region": "ap-guangzhou", "realserver_region": "ap-seoul", "bandwidth": 10, "concurrent": 2}},
+			"gaap", "InquiryPriceCreateProxy", map[string]interface{}{"BillingType": 0}, false},
+		{"yunjing", YunjingLicense{}, parser.PlannedResource{Type: "tencentcloud_cwp_license_order", Region: "ap-guangzhou", After: map[string]interface{}{}},
+			"yunjing", "InquiryPriceOpenProVersionPrepaid", map[string]interface{}{
+				"ChargePrepaid": map[string]interface{}{"Period": 1}}, false},
+		{"cloudhsm", CloudHSMInstance{}, parser.PlannedResource{Type: "tencentcloud_cloudhsm_instance", Region: "ap-guangzhou", After: map[string]interface{}{}},
+			"cloudhsm", "InquiryPriceBuyVsm", map[string]interface{}{
+				"PayMode": 1, "TimeSpan": "1", "TimeUnit": "m"}, false},
+		{"domain", DomainRegistration{}, parser.PlannedResource{Type: "tencentcloud_domain_registration", Region: "ap-guangzhou", After: map[string]interface{}{
+			"domain_name": "example.com", "period": 1}},
+			"domain", "DescribeDomainPriceList", map[string]interface{}{}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := tc.m.Extract(tc.res)
+			if tc.static {
+				if err == nil {
+					t.Fatalf("static mapper %s should refuse Extract (use Estimate)", tc.name)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Extract() error = %v", err)
+			}
+			if req.Product != tc.product {
+				t.Errorf("Product = %q, want %q", req.Product, tc.product)
+			}
+			if req.Action != tc.action {
+				t.Errorf("Action = %q, want %q", req.Action, tc.action)
+			}
+			assertParamsSubset(t, tc.name, req.Params, tc.want)
+		})
+	}
+}
 
 // TestHuaweiMapperRequestBodies locks the request body each Huawei mapper
 // produces (code review #1/#2, plus the EIP/upflow validation item).
