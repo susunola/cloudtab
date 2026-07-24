@@ -56,44 +56,69 @@ func (CVMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	}, nil
 }
 
+// cvmPriceBlock is the nested price structure returned by the CVM
+// InquiryPriceRunInstances API.
+type cvmPriceBlock struct {
+	InstancePrice struct {
+		UnitPrice         float64 `json:"UnitPrice"`
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		OriginalPrice     float64 `json:"OriginalPrice"`
+		DiscountPrice     float64 `json:"DiscountPrice"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+		Currency          string  `json:"Currency"`
+	} `json:"InstancePrice"`
+	BandwidthPrice struct {
+		UnitPrice         float64 `json:"UnitPrice"`
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+	} `json:"BandwidthPrice"`
+}
+
 func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	// The Tencent Cloud SDK wraps real responses under a "Response" key.
+	// Support both the wrapped format (real API) and the unwrapped format
+	// (test mocks) for robustness.
 	var wrap struct {
-		Price struct {
-			InstancePrice struct {
-				UnitPrice         float64 `json:"UnitPrice"`
-				UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-				OriginalPrice     float64 `json:"OriginalPrice"`
-				DiscountPrice     float64 `json:"DiscountPrice"`
-				ChargeUnit        string  `json:"ChargeUnit"`
-			} `json:"InstancePrice"`
-			BandwidthPrice struct {
-				UnitPrice         float64 `json:"UnitPrice"`
-				UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-				ChargeUnit        string  `json:"ChargeUnit"`
-			} `json:"BandwidthPrice"`
-		} `json:"Price"`
+		Price    cvmPriceBlock `json:"Price"`
+		Response struct {
+			Price cvmPriceBlock `json:"Price"`
+		} `json:"Response"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, err
 	}
-	ip := wrap.Price.InstancePrice
+
+	// Prefer the Response-wrapped price when it carries data.
+	price := wrap.Price
+	if wrap.Response.Price.InstancePrice.UnitPriceDiscount > 0 ||
+		wrap.Response.Price.InstancePrice.DiscountPrice > 0 ||
+		wrap.Response.Price.InstancePrice.UnitPrice > 0 {
+		price = wrap.Response.Price
+	}
+
+	currency := price.InstancePrice.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+
+	ip := price.InstancePrice
 	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPriceDiscount, ip.DiscountPrice)
 	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("Compute (%v)", req.Params["InstanceType"]),
 		Unit:        ip.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    currency,
 	}}
-	if wrap.Price.BandwidthPrice.UnitPrice > 0 {
-		bw := wrap.Price.BandwidthPrice
+	if price.BandwidthPrice.UnitPrice > 0 {
+		bw := price.BandwidthPrice
 		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, 0)
 		comps = append(comps, output.CostComponent{
 			Name:        "Public bandwidth",
 			Unit:        bw.ChargeUnit,
 			HourlyCost:  bwHourly,
 			MonthlyCost: bwMonthly,
-			Currency:    "CNY",
+			Currency:    currency,
 		})
 	}
 	return comps, nil
