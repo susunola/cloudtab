@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -63,6 +64,7 @@ func (AlibabaMongoDB) Extract(r parser.PlannedResource) (pricing.PriceRequest, e
 			"SubscriptionType": "PayAsYouGo",
 			"ModuleList": []map[string]string{
 				alibabaModule("DBInstanceClass", "Hour", "DBInstanceClass:"+class),
+				alibabaModule("DBInstanceStorage", "Hour", fmt.Sprintf("DBInstanceStorage:%d", storage)),
 			},
 		},
 	}, nil

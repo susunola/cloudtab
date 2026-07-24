@@ -54,7 +54,9 @@ func openCache(path string, ttl time.Duration) (*cache, error) {
 	return &cache{db: db, ttl: ttl}, nil
 }
 
-// Get returns the cached payload if present and not expired.
+// Get returns the cached payload if present and not expired. Expired entries
+// are deleted on read so the on-disk cache does not grow unbounded with unique
+// SKUs that are only priced once.
 func (c *cache) Get(key string) ([]byte, bool) {
 	if c == nil || c.db == nil {
 		return nil, false
@@ -63,6 +65,7 @@ func (c *cache) Get(key string) ([]byte, bool) {
 		payload []byte
 		found   bool
 	)
+	now := time.Now().Unix()
 	_ = c.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(cacheBucket))
 		if b == nil {
@@ -73,14 +76,25 @@ func (c *cache) Get(key string) ([]byte, bool) {
 			return nil
 		}
 		expiry := int64(binary.BigEndian.Uint64(v[:8]))
-		if time.Now().Unix() > expiry {
-			return nil // expired → miss
+		if now > expiry {
+			return nil // expired → miss (evicted below)
 		}
 		// Copy out: the slice is only valid within the transaction.
 		payload = append([]byte(nil), v[8:]...)
 		found = true
 		return nil
 	})
+	if !found {
+		// Best-effort eviction of the expired/malformed entry. Failures are
+		// ignored: the next Put will overwrite the key anyway.
+		_ = c.db.Update(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(cacheBucket))
+			if b == nil {
+				return nil
+			}
+			return b.Delete([]byte(key))
+		})
+	}
 	return payload, found
 }
 

@@ -13,12 +13,15 @@
 package pricing
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +84,16 @@ type Config struct {
 	// is sent (the API then bills under the credential's default project). Read
 	// from HUAWEI_PROJECT_ID env in the CLI.
 	HuaweiProjectID string
+
+	// AlibabaBSSEndpointRegion is the region used to build the BSS OpenAPI
+	// endpoint (e.g. "cn-hangzhou"). It is NOT necessarily the region of the
+	// resource being priced. When empty it defaults to "cn-hangzhou".
+	AlibabaBSSEndpointRegion string
+
+	// HuaweiBSSEndpointRegion is the region used to resolve the BSS endpoint
+	// (e.g. "cn-north-4" or "ap-southeast-3"). It is NOT the resource region.
+	// When empty it defaults to "cn-north-4".
+	HuaweiBSSEndpointRegion string
 
 	// Timeout bounds a single pricing round-trip (per attempt) so a stalled
 	// InquiryPrice call cannot hang the whole cost run. It is applied to both
@@ -198,7 +211,12 @@ const (
 )
 
 func (r PriceRequest) CacheKey() (string, error) {
-	b, err := json.Marshal(r)
+	// Normalize Provider so "AWS" and "aws" produce the same cache key and avoid
+	// fragmenting the cache across mappers that set the field with different
+	// casing.
+	normalized := r
+	normalized.Provider = r.provider()
+	b, err := json.Marshal(normalized)
 	if err != nil {
 		return "", fmt.Errorf("marshal cache key: %w", err)
 	}
@@ -370,8 +388,21 @@ func (e *Engine) do(key string, req PriceRequest) (resp []byte, err error) {
 // only errors classified as retryable (rate limiting, request timeout, or a
 // transient network/5xx hiccup). Non-retryable errors — unknown product, bad
 // params, unsupported action — return immediately so a mistake fails fast.
+//
+// Backoff includes jitter to prevent synchronized retries after a rate-limit
+// event, and the whole retry window honours a context deadline so a stuck run
+// can be abandoned.
 func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 	attempts := e.cfg.maxRetries() + 1
+	// Cap the total retry window: each attempt may take up to requestTimeout,
+	// plus a backoff budget. The budget is (attempts-1) gaps, each bounded by
+	// retryMaxBackoff; we compute it directly (rather than summing an unbounded
+	// doubling loop) so it can never overflow time.Duration into a negative,
+	// instantly-expired deadline.
+	maxTotal := time.Duration(attempts)*e.cfg.requestTimeout() + time.Duration(attempts)*retryMaxBackoff
+	ctx, cancel := context.WithTimeout(context.Background(), maxTotal)
+	defer cancel()
+
 	backoff := retryBaseBackoff
 	var lastErr error
 	for i := 0; i < attempts; i++ {
@@ -383,7 +414,13 @@ func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 		if i == attempts-1 || !isRetryable(err) {
 			break
 		}
-		time.Sleep(backoff)
+		// Jittered exponential backoff: wait backoff/2 + rand(backoff/2).
+		jitter := backoff/2 + time.Duration(rand.Int63n(int64(backoff/2)))
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("pricing retry window expired: %w", ctx.Err())
+		case <-time.After(jitter):
+		}
 		if backoff *= 2; backoff > retryMaxBackoff {
 			backoff = retryMaxBackoff
 		}
@@ -414,31 +451,19 @@ func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		resp, err := b.query(req)
-		if err != nil {
-			return nil, fmt.Errorf("aws %s: %w", req.Product, err)
-		}
-		return resp, nil
+		return b.query(req)
 	case providerAlibaba:
 		b, err := e.alibabaBackend()
 		if err != nil {
 			return nil, err
 		}
-		resp, err := b.query(req)
-		if err != nil {
-			return nil, fmt.Errorf("alibaba %s: %w", req.Product, err)
-		}
-		return resp, nil
+		return b.query(req)
 	case providerHuawei:
 		b, err := e.huaweiBackend()
 		if err != nil {
 			return nil, err
 		}
-		resp, err := b.query(req)
-		if err != nil {
-			return nil, fmt.Errorf("huawei %s: %w", req.Product, err)
-		}
-		return resp, nil
+		return b.query(req)
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", req.provider())
 	}
@@ -477,6 +502,10 @@ func isRetryable(err error) bool {
 //
 // NOTE: "throttl" as a prefix matches both AWS "Throttling/ThrottlingException"
 // and Alibaba "Throttling.User", so we do NOT add a separate "throttling" entry.
+//
+// "timeout" by itself is intentionally absent: parameter-validation errors such
+// as "InvalidParameterValue: timeout must be positive" would otherwise be
+// retried. We match specific timeout phrases instead.
 var retryableSignatures = []string{
 	"limitexceeded", // Tencent RequestLimitExceeded / <X>.LimitExceeded
 	"requestlimitexceeded",
@@ -487,7 +516,13 @@ var retryableSignatures = []string{
 	"systembusy",         // Alibaba Cloud rate limiting (SystemBusy)
 	"serviceunavailable", // 503
 	"service unavailable",
-	"timeout", // context/request/dial timeout
+	"request timeout",
+	"dial timeout",
+	"connect timeout",
+	"read timeout",
+	"write timeout",
+	"tcp timeout",
+	"i/o timeout",
 	"timed out",
 	"deadline exceeded",
 	"connection reset",
@@ -631,7 +666,62 @@ func bindParams(params map[string]interface{}, target interface{}) error {
 	if err := json.Unmarshal(blob, target); err != nil {
 		return fmt.Errorf("bind params: %w", err)
 	}
+	// Reject a top-level parameter key with no matching field in the target
+	// struct. A field-name typo would otherwise be silently dropped by
+	// json.Unmarshal and the API would receive a zero value, producing a wrong
+	// (typically under-priced) result. Failing fast surfaces the mistake during
+	// development instead of shipping a silently-incorrect estimate.
+	if len(params) > 0 {
+		known := jsonFieldNames(target)
+		var unknown []string
+		for k := range params {
+			if _, ok := known[k]; !ok {
+				unknown = append(unknown, k)
+			}
+		}
+		if len(unknown) > 0 {
+			return fmt.Errorf("parameter(s) %v are not accepted by %T; check for field-name typos (unknown keys are dropped before the API call, producing wrong prices)", unknown, target)
+		}
+	}
 	return nil
+}
+
+// jsonFieldNames returns the set of JSON tag names defined by the top-level
+// fields of v's struct type. It walks through embedded structs one level deep so
+// common Tencent SDK request bases (e.g. common.Request) are included.
+func jsonFieldNames(v interface{}) map[string]struct{} {
+	names := map[string]struct{}{}
+	t := reflect.TypeOf(v)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return names
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			for j := 0; j < f.Type.NumField(); j++ {
+				addJSONTagName(names, f.Type.Field(j))
+			}
+			continue
+		}
+		addJSONTagName(names, f)
+	}
+	return names
+}
+
+func addJSONTagName(dst map[string]struct{}, f reflect.StructField) {
+	tag := f.Tag.Get("json")
+	if tag == "" || tag == "-" {
+		return
+	}
+	if i := strings.Index(tag, ","); i >= 0 {
+		tag = tag[:i]
+	}
+	if tag != "" {
+		dst[tag] = struct{}{}
+	}
 }
 
 // jsonStringer is implemented by every Tencent Cloud SDK response type.
@@ -646,6 +736,9 @@ func sdkResult(out jsonStringer, err error) ([]byte, error) {
 			return nil, fmt.Errorf("tencent api %s: %s", apiErr.GetCode(), apiErr.GetMessage())
 		}
 		return nil, err
+	}
+	if out == nil {
+		return nil, fmt.Errorf("tencent api returned nil response")
 	}
 	return []byte(out.ToJsonString()), nil
 }

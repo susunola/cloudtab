@@ -252,6 +252,60 @@ that each guard many scenarios at once.
 ### Tests
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.7" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.7 — Code-review round: verify, fix the real bugs, ignore the noise
+
+A 23-item review table was checked against the actual code. Verdict: **13 false
+positives, 10 real issues**. This release fixes the real ones and adds regression
+tests so the bug classes cannot silently return.
+
+### Review verdicts (what we did NOT change)
+13 of the 23 claims were false positives — the code already handled them:
+- Alibaba MongoDB storage, CVM/CLB bandwidth monthly price, VPN `UnitPriceDiscount`
+  preference, Alibaba EIP day/hour split, Huawei EIP traffic-as-GB, Yunjing type
+  assertion — all already correct.
+- `isRetryable` does not match a bare "timeout"; BSS regions are overridable; the
+  AWS client uses `context.WithTimeout`; `MaxResults` is set; the cache deletes
+  expired entries; `CacheKey` lowercases the provider; dispatch wraps once.
+
+### Real fixes
+- **#11 bindParams fail-fast** (`engine.go`): unknown parameter keys were silently
+  dropped. Now they produce a clear error ("... are not accepted by <type>; check
+  for field-name typos"), so a mistyped flag can no longer vanish.
+- **#12 retry-window integer overflow** (`engine.go`): the cumulative retry budget
+  was computed by doubling a `time.Duration` in a loop, which wrapped past `int64`
+  max into a *negative* duration — the context expired instantly and every retry
+  path made exactly one attempt. Budget is now computed directly from
+  `(maxRetries+1) * (requestTimeout + retryMaxBackoff)`.
+- **#16 cache path on Windows** (`main.go`): `$HOME` is unset on Windows; the cache
+  dir now falls back to `os.UserHomeDir()` then `$HOME/.cloudtab`.
+- **#17 no usage dump on runtime error** (`main.go`): root/breakdown/diff now set
+  `SilenceUsage`+`SilenceErrors`; the root handler already prints the error.
+- **#18 validate `--format`/`--diff-fmt` before building the engine** (`main.go`):
+  bad formats fail early with a clear message instead of after credential setup.
+- **#19 reject stray positional args** (`main.go`): breakdown/diff now use
+  `Args: cobra.NoArgs`.
+- **#20 provider-alias region detection** (`parser/plan.go`): blocks aliased as
+  `tencentcloud.guangzhou` are now matched by prefix and their region applied
+  (previously only the canonical `tencentcloud` block was detected).
+- **#21 empty-report footer** (`report.go`): an empty report now shows `0.00`
+  instead of a misleading "mixed currencies" footer.
+- **#22 JSON encoder no HTML escaping** (`report.go`,`diff.go`): the JSON renderers
+  now use `SetEscapeHTML(false)` so `<`, `>`, `&` in names/skip reasons are not
+  mangled.
+- **#23 markdown skip-reason escaping** (`diff.go`): skip reasons and addresses are
+  now `mdEscape`d so backticks/stars/underscores in resource names render literally.
+
+### Engine hardening (latent bug)
+- `sdkResult` wrapped a plain string with `%w`, which broke `errors.Is`/unwrapping
+  and tripped `go vet`; changed to `%s`.
+
+### Tests
+- New: `TestBindParamsRejectsUnknownKey`, `TestRenderEmptyReportFooter`,
+  `TestRenderDiffMarkdownEscapesSkipReason`, `TestLoadPlanJSONAliasedProviderRegion`.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

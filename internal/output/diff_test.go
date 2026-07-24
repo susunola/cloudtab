@@ -331,3 +331,43 @@ func TestRenderersSharedConventions(t *testing.T) {
 		t.Errorf("diff markdown still uses hardcoded unsupported-type label:\n%s", dmd.String())
 	}
 }
+
+// TestRenderEmptyReportFooter pins item #21: an empty report (no priced
+// resources) must show a flat "0.00" total, not a misleading
+// "TOTAL (mixed currencies)" label, since there is no currency to mix.
+func TestRenderEmptyReportFooter(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, Report{}, "table"); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "0.00") {
+		t.Errorf("empty report footer should show 0.00, got:\n%s", out)
+	}
+	if strings.Contains(out, "mixed currencies") {
+		t.Errorf("empty report should not claim mixed currencies, got:\n%s", out)
+	}
+}
+
+// TestRenderDiffMarkdownEscapesSkipReason pins item #23: a skip reason (or
+// address) containing markdown-significant characters must be escaped so it
+// does not break the rendered PR comment.
+func TestRenderDiffMarkdownEscapesSkipReason(t *testing.T) {
+	d := DiffReport{Skipped: []SkippedResource{
+		{Address: "aws_lb.x`y", Type: "aws_lb", Reason: "auth failed_for *account*"},
+	}}
+	var buf bytes.Buffer
+	if err := RenderDiff(&buf, d, "markdown"); err != nil {
+		t.Fatalf("RenderDiff: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "*account*") {
+		t.Errorf("skip reason should be markdown-escaped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "\\*account\\*") {
+		t.Errorf("expected escaped *account*, got:\n%s", out)
+	}
+	if !strings.Contains(out, "aws\\_lb.x\\`y") {
+		t.Errorf("expected escaped underscore and backtick in address, got:\n%s", out)
+	}
+}

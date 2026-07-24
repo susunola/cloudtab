@@ -27,8 +27,7 @@ func TestRootDomainForSite(t *testing.T) {
 
 		// International site.
 		{"intl", "intl", "intl.tencentcloudapi.com"},
-		{"international", "international", "intl.tencentcloudapi.com"},
-		{"global", "global", "intl.tencentcloudapi.com"},
+		{"international", "international", "intl.tencentcloudapi.com"}, {"global", "global", "intl.tencentcloudapi.com"},
 		{"overseas", "overseas", "intl.tencentcloudapi.com"},
 		{"intl upper", "INTL", "intl.tencentcloudapi.com"},
 		{"intl padded", "  Intl  ", "intl.tencentcloudapi.com"},
@@ -144,5 +143,24 @@ func TestEngineClientBuildsForBothSites(t *testing.T) {
 		if c == nil {
 			t.Fatalf("site %q: nil client", site)
 		}
+	}
+}
+
+// TestBindParamsRejectsUnknownKey pins item #11: a top-level parameter key that
+// does not map to a field of the target SDK request must fail instead of being
+// silently dropped — dropping it would send a zero value to the API and misprice
+// the resource (typically under-pricing it).
+func TestBindParamsRejectsUnknownKey(t *testing.T) {
+	type fakeReq struct {
+		InstanceType string `json:"InstanceType"`
+		Region       string `json:"Region"`
+	}
+	// Valid key only -> binds cleanly.
+	if err := bindParams(map[string]interface{}{"InstanceType": "S5.LARGE8"}, &fakeReq{}); err != nil {
+		t.Fatalf("valid params should bind, got %v", err)
+	}
+	// Unknown top-level key (typo: "InstancType") -> must error.
+	if err := bindParams(map[string]interface{}{"InstanceType": "S5.LARGE8", "InstancType": "x"}, &fakeReq{}); err == nil {
+		t.Fatal("expected error for unknown parameter key, got nil")
 	}
 }

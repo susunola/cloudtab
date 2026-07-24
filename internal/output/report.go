@@ -55,7 +55,9 @@ func ResourceCostTotal(rc ResourceCost) float64 {
 func Render(w io.Writer, r Report, format string) error {
 	switch format {
 	case "json":
-		return json.NewEncoder(w).Encode(r)
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(r)
 	case "table", "":
 		return renderTable(w, r)
 	}
@@ -79,7 +81,11 @@ func renderTable(w io.Writer, r Report) error {
 			t.Append([]string{addr, c.Name, fmt.Sprintf("%.2f", c.MonthlyCost), c.Currency})
 		}
 	}
-	if cur, uniform := uniformCurrency(r); uniform {
+	if len(r.Resources) == 0 {
+		// No priced resources: there is no currency to total, so show a flat
+		// zero rather than a misleading "mixed currencies" label.
+		t.SetFooter([]string{"", "TOTAL", "0.00", ""})
+	} else if cur, uniform := uniformCurrency(r); uniform {
 		t.SetFooter([]string{"", "TOTAL", fmt.Sprintf("%.2f", r.Total()), cur})
 	} else {
 		t.SetFooter([]string{"", "TOTAL (mixed currencies)", "-", ""})

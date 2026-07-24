@@ -125,7 +125,9 @@ func ComputeDiff(before, after Report) DiffReport {
 func RenderDiff(w io.Writer, d DiffReport, format string) error {
 	switch format {
 	case "json":
-		return json.NewEncoder(w).Encode(d)
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(d)
 	case "markdown":
 		return renderDiffMarkdown(w, d)
 	case "table", "":
@@ -214,8 +216,27 @@ func renderDiffMarkdown(w io.Writer, d DiffReport) error {
 		for _, reason := range reasons {
 			addrs := byReason[reason]
 			sort.Strings(addrs)
-			fmt.Fprintf(w, ">   - **%s** (%d): `%s`\n", reason, len(addrs), strings.Join(addrs, "`, `"))
+			escaped := make([]string, len(addrs))
+			for i, a := range addrs {
+				escaped[i] = mdEscape(a)
+			}
+			fmt.Fprintf(w, ">   - **%s** (%d): `%s`\n", mdEscape(reason), len(addrs), strings.Join(escaped, "`, `"))
 		}
 	}
 	return nil
+}
+
+// mdEscape escapes the markdown-significant characters in s so that a skip
+// reason or resource address containing "*", "_", "`", or "[" does not break
+// the rendered PR comment. It does not escape the surrounding backticks we add
+// ourselves when listing addresses.
+func mdEscape(s string) string {
+	return strings.NewReplacer(
+		"\\", "\\\\",
+		"`", "\\`",
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+	).Replace(s)
 }

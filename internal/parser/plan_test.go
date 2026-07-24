@@ -178,3 +178,31 @@ func TestLoadHuaweiPlanJSON(t *testing.T) {
 		t.Errorf("huawei ECS region = %q, want cn-north-4", ecs.Region)
 	}
 }
+
+// TestLoadPlanJSONAliasedProviderRegion pins item #20: a provider declared under
+// an aliased block ("tencentcloud.guangzhou") must still contribute its region,
+// otherwise its resources would silently fall back to the CLI --region.
+func TestLoadPlanJSONAliasedProviderRegion(t *testing.T) {
+	doc := `{
+      "format_version": "1.2",
+      "configuration": {"provider_config": {"tencentcloud.guangzhou": {"name": "tencentcloud", "expressions": {"region": {"constant_value": "ap-guangzhou-6"}}}}},
+      "resource_changes": [
+        {"address": "tencentcloud_instance.web", "type": "tencentcloud_instance", "name": "web",
+         "change": {"actions": ["create"], "after": {"instance_type": "S5.LARGE8"}}}
+      ]
+    }`
+	path := filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := LoadPlanJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanJSON: %v", err)
+	}
+	if len(p.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(p.Resources))
+	}
+	if p.Resources[0].Region != "ap-guangzhou-6" {
+		t.Errorf("aliased provider region = %q, want ap-guangzhou-6", p.Resources[0].Region)
+	}
+}

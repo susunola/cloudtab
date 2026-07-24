@@ -136,16 +136,39 @@ type alibabaPriceInfo struct {
 	Currency  string
 }
 
+// alibabaModulePrice carries a single module's resolved cost and its module code.
+type alibabaModulePrice struct {
+	ModuleCode string
+	CostYuan   float64
+}
+
 // parseAlibabaPrice unmarshals a raw Alibaba Cloud BSS GetPayAsYouGoPrice
 // response into a simplified price info struct. It sums CostAfterDiscount
 // across all module details, falling back to OriginalCost. Currency defaults
 // to "CNY".
 func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
+	modules, currency, err := parseAlibabaModules(raw)
+	if err != nil {
+		return alibabaPriceInfo{}, err
+	}
+	var total float64
+	for _, m := range modules {
+		total += m.CostYuan
+	}
+	return alibabaPriceInfo{PriceYuan: total, Currency: currency}, nil
+}
+
+// parseAlibabaModules unmarshals the BSS response and returns each module's
+// code and discounted cost. This lets mappers with mixed PriceType modules
+// (e.g. EIP bandwidth per-day + ISP per-hour) convert each component with the
+// correct unit instead of collapsing everything into a single daily rate.
+func parseAlibabaModules(raw []byte) ([]alibabaModulePrice, string, error) {
 	var resp struct {
 		Data struct {
 			Currency      string `json:"Currency"`
 			ModuleDetails struct {
 				ModuleDetail []struct {
+					ModuleCode        string  `json:"ModuleCode"`
 					CostAfterDiscount float64 `json:"CostAfterDiscount"`
 					OriginalCost      float64 `json:"OriginalCost"`
 				} `json:"ModuleDetail"`
@@ -153,21 +176,21 @@ func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
 		} `json:"Data"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return alibabaPriceInfo{}, err
+		return nil, "", err
 	}
 	cur := resp.Data.Currency
 	if cur == "" {
 		cur = "CNY"
 	}
-	var total float64
+	var modules []alibabaModulePrice
 	for _, md := range resp.Data.ModuleDetails.ModuleDetail {
 		v := md.CostAfterDiscount
 		if v <= 0 {
 			v = md.OriginalCost
 		}
-		total += v
+		modules = append(modules, alibabaModulePrice{ModuleCode: md.ModuleCode, CostYuan: v})
 	}
-	return alibabaPriceInfo{PriceYuan: total, Currency: cur}, nil
+	return modules, cur, nil
 }
 
 // --- Huawei Cloud helpers ---

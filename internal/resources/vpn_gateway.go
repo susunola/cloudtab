@@ -72,12 +72,13 @@ func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 }
 
 func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	// itemPrice mirrors vpc ItemPrice (CNY). UnitPrice is CNY/hour for POSTPAID.
+	// itemPrice mirrors vpc ItemPrice (CNY). UnitPriceDiscount is CNY/hour for POSTPAID.
 	type itemPrice struct {
-		UnitPrice     float64 `json:"UnitPrice"`
-		OriginalPrice float64 `json:"OriginalPrice"`
-		DiscountPrice float64 `json:"DiscountPrice"`
-		ChargeUnit    string  `json:"ChargeUnit"`
+		UnitPrice         float64 `json:"UnitPrice"`
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		OriginalPrice     float64 `json:"OriginalPrice"`
+		DiscountPrice     float64 `json:"DiscountPrice"`
+		ChargeUnit        string  `json:"ChargeUnit"`
 	}
 	type priceBlock struct {
 		InstancePrice  itemPrice `json:"InstancePrice"`
@@ -104,7 +105,11 @@ func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 	comps := make([]output.CostComponent, 0, 2)
 
 	ip := price.InstancePrice
-	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPrice, ip.DiscountPrice)
+	unitPrice := ip.UnitPriceDiscount
+	if unitPrice == 0 {
+		unitPrice = ip.UnitPrice
+	}
+	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, unitPrice, ip.DiscountPrice)
 	comps = append(comps, output.CostComponent{
 		Name:        fmt.Sprintf("VPN gateway (%v Mbps)", req.Params["InternetMaxBandwidthOut"]),
 		Unit:        ip.ChargeUnit,
@@ -114,7 +119,11 @@ func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 	})
 
 	if bw := price.BandwidthPrice; bw.UnitPrice > 0 || bw.DiscountPrice > 0 {
-		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPrice, bw.DiscountPrice)
+		bwUnitPrice := bw.UnitPriceDiscount
+		if bwUnitPrice == 0 {
+			bwUnitPrice = bw.UnitPrice
+		}
+		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bwUnitPrice, bw.DiscountPrice)
 		comps = append(comps, output.CostComponent{
 			Name:        "VPN public bandwidth",
 			Unit:        bw.ChargeUnit,

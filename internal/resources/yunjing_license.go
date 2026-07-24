@@ -83,7 +83,10 @@ func (YunjingLicense) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 	// Prefer the discounted price; fall back to the original (already CNY/month).
 	monthly := preferDiscount(pb.DiscountPrice, pb.OriginalPrice)
 
-	n := len(req.Params["Machines"].([]interface{}))
+	n := 1
+	if machines, ok := req.Params["Machines"].([]interface{}); ok {
+		n = len(machines)
+	}
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("CWP Pro license (x%d)", n),
 		Unit:        "MONTH",

@@ -115,7 +115,7 @@ func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 	}}
 	if price.BandwidthPrice.UnitPrice > 0 {
 		bw := price.BandwidthPrice
-		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, 0)
+		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, bw.UnitPriceDiscount)
 		comps = append(comps, output.CostComponent{
 			Name:        "Public bandwidth",
 			Unit:        bw.ChargeUnit,

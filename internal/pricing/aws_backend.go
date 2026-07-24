@@ -70,7 +70,10 @@ type awsBackend struct {
 // This is only ever called on the first AWS request (lazily, from
 // Engine.awsBackend), so a pure-Tencent run never resolves AWS credentials.
 func newAWSBackend(cfg Config) (backend, error) {
-	ctx := context.Background()
+	// Bound credential resolution (including IMDS fallback) so an unreachable
+	// EC2 metadata service cannot hang the whole cost run.
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.requestTimeout())
+	defer cancel()
 	opts := []func(*awsconfig.LoadOptions) error{
 		awsconfig.WithRegion(awsPricingAPIRegion),
 	}
@@ -114,6 +117,7 @@ func (b *awsBackend) query(req PriceRequest) ([]byte, error) {
 		ServiceCode:   aws.String(req.Product),
 		Filters:       filters,
 		FormatVersion: aws.String("aws_v1"),
+		MaxResults:    aws.Int32(int32(maxResults)),
 	}
 
 	collected := make([]json.RawMessage, 0, maxResults)

@@ -65,9 +65,13 @@ func newHuaweiBackend(cfg Config) (backend, error) {
 		WithSk(sk).
 		Build()
 
+	endpointRegion := cfg.HuaweiBSSEndpointRegion
+	if endpointRegion == "" {
+		endpointRegion = "cn-north-4"
+	}
 	client := bssintl.NewBssintlClient(
 		bssintl.BssintlClientBuilder().
-			WithRegion(region.ValueOf("cn-north-4")).
+			WithRegion(region.ValueOf(endpointRegion)).
 			WithCredential(auth).
 			// Bound each HTTP round-trip so a stalled Huawei BSS call cannot
 			// hang the whole run (code review #4). --timeout now applies here

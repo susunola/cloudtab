@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // PlannedResource is one row we hand to the pricing engine.
@@ -59,9 +60,18 @@ func LoadPlanJSON(path string) (*Plan, error) {
 	// resource type: tencentcloud_* resources default to the tencentcloud
 	// provider's region, aws_* resources to the aws provider's region.
 	providerRegion := func(name string) string {
-		if pc, ok := doc.Configuration.ProviderConfig[name]; ok {
+		// Match the base provider block ("tencentcloud") and any aliased block
+		// ("tencentcloud.guangzhou"): both declare the provider's default region
+		// under the same "region" expression, so an aliased provider must not be
+		// skipped (otherwise its resources fall back to the CLI --region).
+		for pcName, pc := range doc.Configuration.ProviderConfig {
+			if pcName != name && !strings.HasPrefix(pcName, name+".") {
+				continue
+			}
 			if r, ok := pc.Expressions["region"]; ok {
-				return r.ConstantValue
+				if v := strings.TrimSpace(r.ConstantValue); v != "" {
+					return v
+				}
 			}
 		}
 		return ""

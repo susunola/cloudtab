@@ -48,15 +48,55 @@ func (AlibabaEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 }
 
 func (AlibabaEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+	modules, currency, err := parseAlibabaModules(raw)
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Alibaba EIP",
-		Unit:        "DAY",
-		HourlyCost:  info.PriceYuan / daysPerMonth,
-		MonthlyCost: info.PriceYuan * daysPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+
+	// EIP mixes modules with different billing units:
+	//   - Bandwidth is priced per DAY.
+	//   - ISP is priced per HOUR.
+	//   - InternetChargeType is a Usage classifier with no standalone cost.
+	// Convert each module with its actual unit rather than folding everything
+	// into a single daily rate.
+	var comps []output.CostComponent
+	for _, m := range modules {
+		var name, unit string
+		var hourly, monthly float64
+		switch m.ModuleCode {
+		case "Bandwidth":
+			name = "Alibaba EIP bandwidth"
+			unit = "DAY"
+			hourly = m.CostYuan / daysPerMonth
+			monthly = m.CostYuan * daysPerMonth
+		case "ISP":
+			name = "Alibaba EIP ISP"
+			unit = "HOUR"
+			hourly = m.CostYuan
+			monthly = m.CostYuan * hoursPerMonth
+		default:
+			// Usage classifiers (InternetChargeType) have no cost of their own.
+			continue
+		}
+		comps = append(comps, output.CostComponent{
+			Name:        name,
+			Unit:        unit,
+			HourlyCost:  hourly,
+			MonthlyCost: monthly,
+			Currency:    currency,
+		})
+	}
+	if len(comps) == 0 {
+		// Fallback for responses that do not include ModuleCode: report a single
+		// daily component so callers still see a total.
+		info, _ := parseAlibabaPrice(raw)
+		comps = append(comps, output.CostComponent{
+			Name:        "Alibaba EIP",
+			Unit:        "DAY",
+			HourlyCost:  info.PriceYuan / daysPerMonth,
+			MonthlyCost: info.PriceYuan * daysPerMonth,
+			Currency:    info.Currency,
+		})
+	}
+	return comps, nil
 }

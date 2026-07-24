@@ -51,9 +51,11 @@ var Version = "(dev)"
 
 func main() {
 	root := &cobra.Command{
-		Use:     "cloudtab",
-		Short:   "Multi-cloud cost estimation from Terraform plans",
-		Version: Version,
+		Use:           "cloudtab",
+		Short:         "Multi-cloud cost estimation from Terraform plans",
+		Version:       Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
@@ -79,9 +81,15 @@ func main() {
 		cacheTTL    time.Duration
 	)
 	breakdown := &cobra.Command{
-		Use:   "breakdown",
-		Short: "Show monthly cost of a Terraform plan",
+		Use:           "breakdown",
+		Short:         "Show monthly cost of a Terraform plan",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if format != "table" && format != "json" {
+				return fmt.Errorf("unknown format %q (want table or json)", format)
+			}
 			engine, err := newEngine(region, site, noCache, cacheDir, timeout, maxRetries, cacheTTL)
 			if err != nil {
 				return err
@@ -130,9 +138,15 @@ func main() {
 		diffCacheTTL    time.Duration
 	)
 	diff := &cobra.Command{
-		Use:   "diff",
-		Short: "Compare monthly cost between two plans (before -> after)",
+		Use:           "diff",
+		Short:         "Compare monthly cost between two plans (before -> after)",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if diffFmt != "table" && diffFmt != "json" && diffFmt != "markdown" {
+				return fmt.Errorf("unknown format %q (want table, json or markdown)", diffFmt)
+			}
 			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries, diffCacheTTL)
 			if err != nil {
 				return err
@@ -247,7 +261,15 @@ func cachePathForFlags(noCache bool, cacheDir string) string {
 		return ""
 	}
 	if cacheDir == "" {
-		cacheDir = os.ExpandEnv("$HOME/.cloudtab")
+		// Prefer the OS user-home directory so the cache lands in the user
+		// profile on every platform (including Windows, where $HOME is not a
+		// standard env var and os.ExpandEnv would have resolved to a relative
+		// path under the current working directory).
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			cacheDir = filepath.Join(home, ".cloudtab")
+		} else {
+			cacheDir = os.ExpandEnv("$HOME/.cloudtab")
+		}
 	}
 	return filepath.Join(cacheDir, "cache.db")
 }

@@ -48,7 +48,11 @@ func newAlibabaBackend(cfg Config) (backend, error) {
 		return nil, fmt.Errorf("alibaba: missing access key (set ALIBABA_ACCESS_KEY_ID / ALIBABA_ACCESS_KEY_SECRET or Config.AlibabaAccessKeyID / AlibabaAccessKeySecret)")
 	}
 
-	client, err := bssopenapi.NewClientWithAccessKey("cn-hangzhou", ak, sk)
+	endpointRegion := cfg.AlibabaBSSEndpointRegion
+	if endpointRegion == "" {
+		endpointRegion = "cn-hangzhou"
+	}
+	client, err := bssopenapi.NewClientWithAccessKey(endpointRegion, ak, sk)
 	if err != nil {
 		return nil, fmt.Errorf("alibaba: create BSS client: %w", err)
 	}

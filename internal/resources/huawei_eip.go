@@ -67,11 +67,24 @@ func (HuaweiEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 	}, nil
 }
 
-func (HuaweiEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+func (HuaweiEIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
 	info, err := parseHuaweiPrice(raw)
 	if err != nil {
 		return nil, err
 	}
+
+	// By-traffic bandwidth is priced per-GB (usage_measure_id=10), not per-hour.
+	// Report it with the correct unit and do not multiply by hoursPerMonth.
+	if isHuaweiTrafficProduct(req.Params) {
+		return []output.CostComponent{{
+			Name:        "Huawei EIP (per-GB traffic)",
+			Unit:        "GB",
+			HourlyCost:  0,
+			MonthlyCost: 0,
+			Currency:    info.Currency,
+		}}, nil
+	}
+
 	return []output.CostComponent{{
 		Name:        "Huawei EIP",
 		Unit:        "HOUR",
@@ -79,4 +92,19 @@ func (HuaweiEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompone
 		MonthlyCost: info.Amount * hoursPerMonth,
 		Currency:    info.Currency,
 	}}, nil
+}
+
+// isHuaweiTrafficProduct returns true when any product_info in the request uses
+// usage_measure_id 10 (upflow / per-GB traffic billing).
+func isHuaweiTrafficProduct(params map[string]interface{}) bool {
+	infos, ok := params["product_infos"].([]map[string]interface{})
+	if !ok {
+		return false
+	}
+	for _, pi := range infos {
+		if pi["usage_measure_id"] == int32(10) || pi["usage_measure_id"] == 10 {
+			return true
+		}
+	}
+	return false
 }
