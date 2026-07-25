@@ -57,6 +57,11 @@ for os in darwin linux; do
     echo "  $os/$arch"
     ( cd "$SRC" && GOOS=$os GOARCH=$arch CGO_ENABLED=0 \
         go build -trimpath -ldflags "-s -w -X main.Version=$VERSION" -o "$bin" ./cmd/cloudtab )
+    # UPX compress Linux binaries (Mach-O/macOS not supported by UPX)
+    if [[ "$os" == "linux" ]] && command -v upx >/dev/null 2>&1; then
+      echo "  upx $os/$arch"
+      upx --best "$bin" 2>&1 | tail -1
+    fi
     tar -czf "$OUT/cloudtab_${os}_${arch}.tar.gz" -C "$(dirname "$bin")" cloudtab
   done
 done
