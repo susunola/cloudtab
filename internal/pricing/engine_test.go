@@ -303,10 +303,10 @@ func TestSiteKeyForProvider(t *testing.T) {
 		{"tencent intl", Config{Site: "intl"}, providerTencent, "intl"},
 		{"tencent domestic", Config{Site: ""}, providerTencent, "domestic"},
 
-		// AWS: default domestic->us-east-1 (global); "domestic" -> aws-cn.
+		// AWS: default intl (global us-east-1); "domestic" -> aws-cn.
 		{"aws domestic", Config{AWSSite: "domestic"}, providerAWS, "domestic"},
 		{"aws intl", Config{AWSSite: "intl"}, providerAWS, "intl"},
-		{"aws default", Config{}, providerAWS, "domestic"},
+		{"aws default", Config{}, providerAWS, "intl"},
 
 		// Alibaba: default domestic (cn-hangzhou).
 		{"alibaba intl", Config{AlibabaSite: "intl"}, providerAlibaba, "intl"},

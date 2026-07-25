@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -75,7 +76,7 @@ func newAWSBackend(cfg Config) (backend, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.requestTimeout())
 	defer cancel()
 	region := awsPricingAPIRegion // us-east-1 (global default)
-	if normalizeSite(cfg.AWSSite) == "domestic" {
+	if strings.TrimSpace(cfg.AWSSite) != "" && normalizeSite(cfg.AWSSite) == "domestic" {
 		region = "cn-north-1" // AWS China partition (aws-cn)
 	}
 	opts := []func(*awsconfig.LoadOptions) error{

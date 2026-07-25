@@ -229,10 +229,11 @@ func (e *Engine) siteKeyForProvider(provider string) string {
 		case providerHuawei:
 			site = e.cfg.HuaweiSite
 		}
-		// AWS and Alibaba default to the Chinese-mainland site; Huawei defaults
-		// to International (a China-mainland Huawei credential is selected
-		// explicitly with "domestic"), matching each cloud's account model.
-		if provider == providerHuawei && strings.TrimSpace(site) == "" {
+		// Provider-specific empty default, matching each cloud's historical
+		// behaviour: AWS defaults to the GLOBAL partition (us-east-1) and
+		// Huawei to International (bss-intl); Alibaba defaults to the
+		// Chinese-mainland site. An explicitly-set site always wins.
+		if provider != providerAlibaba && strings.TrimSpace(site) == "" {
 			return "intl"
 		}
 		return normalizeSite(site)
