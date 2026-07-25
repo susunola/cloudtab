@@ -167,6 +167,19 @@ func rootDomainForSite(site string) string {
 	}
 }
 
+// siteRootDomain returns the site-normalized Tencent root domain, preferring the
+// value precomputed in NewEngine. Engines built directly as &Engine{...} (some
+// unit tests) leave rootDomain empty; for those we derive it from cfg.Site on
+// demand — identical result, just without the one-time caching. This keeps the
+// per-request hot path free of string normalization in normal use while staying
+// correct for hand-constructed test engines.
+func (e *Engine) siteRootDomain() string {
+	if e.rootDomain != "" {
+		return e.rootDomain
+	}
+	return rootDomainForSite(e.cfg.Site)
+}
+
 // PriceRequest is the neutral request submitted by a Mapper.
 //
 //	Provider: "" | "tencentcloud" (default) | "aws". Selects the pricing
@@ -235,10 +248,17 @@ type backend interface {
 }
 
 type Engine struct {
-	cfg     Config
-	cache   *cache // optional BoltDB
-	mu      sync.Mutex
-	clients map[string]interface{} // product:region -> typed SDK client
+	cfg   Config
+	cache *cache // optional BoltDB
+	mu    sync.Mutex
+
+	// rootDomain is the site-normalized Tencent root domain ("intl.tencentcloudapi.com"
+	// for the international site, "" for the Chinese-mainland default), resolved
+	// once from cfg.Site at construction. Every caller that needs the site
+	// (Query's site-key, cacheKey namespacing, client RootDomain) reuses this
+	// instead of re-running rootDomainForSite on each request.
+	rootDomain string
+	clients    map[string]interface{} // product:region -> typed SDK client
 
 	// aws is the lazily-initialised AWS pricing backend. It is created on the
 	// first AWS request (so a pure-Tencent run never touches the AWS SDK or
@@ -280,7 +300,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 	// only prices AWS / Alibaba / Huawei resources needs none of them. We
 	// validate the Tencent SecretID/SecretKey lazily inside dispatch() only
 	// when a Tencent Cloud resource is actually priced (code review #3).
-	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}}
+	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}, rootDomain: rootDomainForSite(cfg.Site)}
 	if cfg.CachePath != "" && !cfg.NoCache {
 		c, err := openCache(cfg.CachePath, cfg.CacheTTL)
 		if err != nil {
@@ -316,7 +336,7 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	// also guarantees a stale cached value can never be surfaced, so the skip
 	// takes effect immediately for every user, not just after the cache TTL.
 	siteKey := "domestic"
-	if rootDomainForSite(e.cfg.Site) == "intl.tencentcloudapi.com" {
+	if e.siteRootDomain() == "intl.tencentcloudapi.com" {
 		siteKey = "intl"
 	}
 	if h, ok := handlers[req.Product]; ok {
@@ -582,9 +602,9 @@ func (e *Engine) cacheKey(req PriceRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// rootDomainForSite("") == "" (Chinese-mainland default); using it as a
+	// e.siteRootDomain() == "" for the Chinese-mainland default; using it as a
 	// prefix keeps pre-existing domestic keys stable while isolating intl.
-	return rootDomainForSite(e.cfg.Site) + "|" + base, nil
+	return e.siteRootDomain() + "|" + base, nil
 }
 
 // clientFn builds a typed SDK client from a credential/profile pair.
@@ -609,7 +629,7 @@ func (e *Engine) client(product, region string, newFn clientFn) (interface{}, er
 	// We deliberately do NOT set HttpProfile.Endpoint here: Endpoint is a full
 	// host that takes precedence over RootDomain and would pin every product to
 	// the Chinese-mainland site, defeating international-site credentials.
-	if rd := rootDomainForSite(e.cfg.Site); rd != "" {
+	if rd := e.siteRootDomain(); rd != "" {
 		prof.HttpProfile.RootDomain = rd
 	}
 	// Bound each HTTP round-trip so a stalled InquiryPrice call cannot hang the

@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -232,5 +233,56 @@ func TestCloudHSMUnavailableOnIntl(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unavailable on intl site") {
 		t.Errorf("cloudhsm intl error = %q, want it to mention %q", err.Error(), "unavailable on intl site")
+	}
+}
+
+// TestCloudHSMIntlSkipsEvenWithStaleCache guards the key property of the intl
+// skip: the unavailableOnSites check in Query runs BEFORE the cache lookup, so
+// a stale placeholder from a previous (buggy) run can never be surfaced. We
+// seed the on-disk cache with the bogus ¥150,000,000,000 value at the exact key
+// cloudhsm/intl would use, then assert Query still returns the unavailable
+// error (not the cached number). This is the property that makes the fix take
+// effect immediately for every user without clearing their on-disk cache.
+func TestCloudHSMIntlSkipsEvenWithStaleCache(t *testing.T) {
+	dir := t.TempDir()
+	// CachePath must be a BoltDB file, not the temp dir itself, or openCache
+	// disables the cache and the seeding below becomes a no-op (defeating the
+	// test's purpose of proving a stale value is never surfaced).
+	e, err := NewEngine(Config{SecretID: "dummy", SecretKey: "dummy", Site: "intl", CachePath: filepath.Join(dir, "cloudtab-cache.db")})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer e.Close()
+
+	req := PriceRequest{
+		Product: "cloudhsm",
+		Action:  "InquiryPriceBuyVsm",
+		Region:  "ap-guangzhou",
+		Params: map[string]interface{}{
+			"GoodsNum": 1, "PayMode": 1, "TimeSpan": "1",
+			"TimeUnit": "m", "Currency": "CNY", "Type": "CREATE", "HsmType": "virtualization",
+		},
+	}
+
+	// Seed the cache with the bogus placeholder at cloudhsm/intl's key.
+	key, kerr := e.cacheKey(req)
+	if kerr != nil {
+		t.Fatalf("cacheKey: %v", kerr)
+	}
+	if perr := e.cache.Put(key, []byte("150000000000")); perr != nil {
+		t.Fatalf("seed cache: %v", perr)
+	}
+
+	// Even with the stale value present, Query must skip with the reason and
+	// must NOT return the cached placeholder.
+	resp, qerr := e.Query(req)
+	if qerr == nil {
+		t.Fatalf("expected cloudhsm on intl to be unavailable; got resp=%q", string(resp))
+	}
+	if !strings.Contains(qerr.Error(), "unavailable on intl site") {
+		t.Errorf("cloudhsm intl error = %q, want it to mention %q", qerr.Error(), "unavailable on intl site")
+	}
+	if resp != nil {
+		t.Errorf("cloudhsm intl must not surface the cached placeholder; got resp=%q", string(resp))
 	}
 }
