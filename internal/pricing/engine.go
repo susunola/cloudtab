@@ -688,15 +688,38 @@ func bindParams(params map[string]interface{}, target interface{}) error {
 	return nil
 }
 
+// jsonFieldNamesCache memoizes the per-type field scan below. bindParams calls
+// jsonFieldNames once per priced resource, and a real plan repeats the same
+// handful of SDK request types thousands of times — re-running reflection on
+// every call would be pure waste. Keyed by reflect.Type; values are read-only
+// (callers must never mutate the returned map).
+var jsonFieldNamesCache sync.Map // reflect.Type -> map[string]struct{}
+
 // jsonFieldNames returns the set of JSON tag names defined by the top-level
 // fields of v's struct type. It walks through embedded structs one level deep so
 // common Tencent SDK request bases (e.g. common.Request) are included.
+//
+// Results are memoized by reflect.Type (see jsonFieldNamesCache) because the
+// same request types recur across every resource in a plan.
 func jsonFieldNames(v interface{}) map[string]struct{} {
-	names := map[string]struct{}{}
 	t := reflect.TypeOf(v)
+	if t == nil {
+		return map[string]struct{}{}
+	}
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+	if cached, ok := jsonFieldNamesCache.Load(t); ok {
+		return cached.(map[string]struct{})
+	}
+	names := computeJSONFieldNames(t)
+	jsonFieldNamesCache.Store(t, names)
+	return names
+}
+
+// computeJSONFieldNames performs the actual reflection scan for jsonFieldNames.
+func computeJSONFieldNames(t reflect.Type) map[string]struct{} {
+	names := map[string]struct{}{}
 	if t.Kind() != reflect.Struct {
 		return names
 	}

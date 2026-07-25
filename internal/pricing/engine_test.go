@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"sync"
 	"testing"
 
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -163,4 +164,35 @@ func TestBindParamsRejectsUnknownKey(t *testing.T) {
 	if err := bindParams(map[string]interface{}{"InstanceType": "S5.LARGE8", "InstancType": "x"}, &fakeReq{}); err == nil {
 		t.Fatal("expected error for unknown parameter key, got nil")
 	}
+}
+
+// TestJSONFieldNamesMemoizedAndRaceSafe pins the reflection memoization in
+// jsonFieldNames: repeated calls on the same type must return a consistent key
+// set (including one level of embedded struct), and concurrent callers must not
+// race on the shared cached map. Run under -race to exercise the latter.
+func TestJSONFieldNamesMemoizedAndRaceSafe(t *testing.T) {
+	type embeddedBase struct {
+		X string `json:"x"`
+	}
+	type sampleReq struct {
+		A string `json:"a"`
+		B int    `json:"b"`
+		embeddedBase
+	}
+
+	want := []string{"a", "b", "x"}
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			names := jsonFieldNames(&sampleReq{})
+			for _, k := range want {
+				if _, ok := names[k]; !ok {
+					t.Errorf("jsonFieldNames missing key %q", k)
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
