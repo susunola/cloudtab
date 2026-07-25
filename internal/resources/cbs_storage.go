@@ -34,12 +34,15 @@ func (CBSStorage) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 		chargeType = "POSTPAID_BY_HOUR"
 	}
 
+	// NOTE: InquiryPriceCreateDisks has NO zone/Placement field — CBS disk
+	// pricing is zone-agnostic (see SDK models.go InquiryPriceCreateDisksRequest).
+	// Sending Placement makes the SDK reject the request client-side
+	// ("parameter(s) [Placement] are not accepted"), so we must NOT include it.
 	params := map[string]interface{}{
 		"DiskType":       diskType,
 		"DiskSize":       size,
 		"DiskChargeType": chargeType,
 		"DiskCount":      1,
-		"Placement":      map[string]interface{}{"Zone": zone},
 	}
 	if chargeType == "PREPAID" {
 		params["DiskChargePrepaid"] = map[string]interface{}{

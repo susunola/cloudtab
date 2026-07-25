@@ -158,6 +158,31 @@ func TestTencentMapperRequestBodies(t *testing.T) {
 	}
 }
 
+// TestCBSExtractOmitsPlacement guards the bug where CBSStorage.Extract emitted a
+// "Placement" key that InquiryPriceCreateDisksRequest does not accept, so the SDK
+// rejected the request client-side ("parameter(s) [Placement] are not accepted")
+// before any pricing call ever fired. CBS disk pricing is zone-agnostic and the
+// API takes no zone/Placement field at all.
+func TestCBSExtractOmitsPlacement(t *testing.T) {
+	m := CBSStorage{}
+	res := parser.PlannedResource{Type: "tencentcloud_cbs_storage", Region: "ap-guangzhou", After: map[string]interface{}{
+		"storage_type": "CLOUD_PREMIUM", "storage_size": 100, "availability_zone": "ap-guangzhou-6",
+		"charge_type": "POSTPAID",
+	}}
+	req, err := m.Extract(res)
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	if _, ok := req.Params["Placement"]; ok {
+		t.Errorf("CBS Extract must not emit Placement (InquiryPriceCreateDisksRequest has no such field)")
+	}
+	for _, k := range []string{"DiskType", "DiskSize", "DiskChargeType", "DiskCount"} {
+		if _, ok := req.Params[k]; !ok {
+			t.Errorf("CBS Extract missing expected param %q", k)
+		}
+	}
+}
+
 // TestHuaweiMapperRequestBodies locks the request body each Huawei mapper
 // produces (code review #1/#2, plus the EIP/upflow validation item).
 //
