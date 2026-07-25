@@ -1,0 +1,26 @@
+{
+  "format_version": "1.2",
+  "configuration": {
+    "provider_config": {
+      "tencentcloud": {
+        "expressions": {
+          "region": { "constant_value": "ap-guangzhou" }
+        }
+      }
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "tencentcloud_eip.web",
+      "type": "tencentcloud_eip",
+      "name": "web",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "internet_charge_type": "BANDWIDTH_POSTPAID_BY_HOUR",
+          "internet_max_bandwidth_out": 5
+        }
+      }
+    }
+  ]
+}
