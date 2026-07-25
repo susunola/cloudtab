@@ -443,6 +443,39 @@ never cross-contaminate.
   `TestCloudHSMIntlSkipsEvenWithStaleCache`.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.12" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.12 — fix: AWS default preserved as global
+
+v0.3.11 generalized `site` to all four clouds but regressed the AWS default: an
+unset `--aws-site` was routed to the `aws-cn` partition (cn-north-1) instead of
+the historical global default (us-east-1). This release restores the correct
+default and hardens the site logic against cross-site cache poisoning.
+
+### AWS default preserved as global
+- An **empty `AWSSite` now stays on the global partition** (us-east-1), matching
+  AWS's historical behaviour. Only an explicit `--aws-site=domestic` switches to
+  `aws-cn` (cn-north-1). The region-selection guard in `aws_backend.go` requires
+  `strings.TrimSpace(cfg.AWSSite) != "" && normalizeSite(cfg.AWSSite) == "domestic"`
+  before picking cn-north-1, so an unset site can never leak into the China
+  partition.
+- `siteKeyForProvider` now returns `"intl"` for AWS (and Huawei) with an empty
+  site selector — **matching the backend endpoint for every provider**. Because
+  the cache key and the actual endpoint now agree, a global (us-east-1) request
+  can no longer be served from (or write into) an `aws-cn` cache entry. Alibaba
+  remains the exception: empty → `domestic` (cn-hangzhou), as before.
+
+### Includes v0.3.11
+The per-provider `--aws-site`/`--alibaba-site`/`--huawei-site` selectors, the
+Huawei cn/intl routing fix, and the provider-agnostic unavailable gate are all
+included (this is a patch on top of v0.3.11).
+
+### Tests
+- `TestSiteKeyForProvider` now asserts `aws default` (empty `AWSSite`) → `"intl"`
+  (was wrongly `"domestic"`); `TestUnavailableGateNonTencent` and the CloudHSM
+  tests remain green.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
