@@ -170,5 +170,23 @@ func TestAWSLocationUnknownRegionFallsBack(t *testing.T) {
 	}
 }
 
+func TestAWSLocationNewerRegions(t *testing.T) {
+	cases := map[string]string{
+		"ap-southeast-3": "Asia Pacific (Jakarta)",
+		"ap-southeast-4": "Asia Pacific (Melbourne)",
+		"ap-south-2":     "Asia Pacific (Hyderabad)",
+		"eu-central-2":   "Europe (Zurich)",
+		"eu-south-2":     "Europe (Spain)",
+		"me-central-1":   "Middle East (UAE)",
+		"il-central-1":   "Israel (Tel Aviv)",
+		"ca-west-1":      "Canada West (Calgary)",
+	}
+	for region, want := range cases {
+		if got := awsLocation(region); got != want {
+			t.Errorf("awsLocation(%q) = %q, want %q", region, got, want)
+		}
+	}
+}
+
 // keep the pricing import referenced in case future tests build requests
 var _ = pricing.PriceRequest{}

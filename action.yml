@@ -42,7 +42,7 @@ runs:
         VER="${{ inputs.cloudtab-version }}"
         if [ "$VER" = "latest" ]; then
           VER=$(curl -sfL https://api.github.com/repos/susunola/cloudtab/releases/latest | \
-                grep -Po '"tag_name":\s*"\K[^"]+')
+                sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
         fi
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
         ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64
@@ -75,6 +75,7 @@ runs:
           # Build baseline from base ref in a worktree
           git fetch origin "${{ inputs.base-ref }}" --depth=1
           WT=$(mktemp -d)
+          trap 'git worktree remove "$WT" >/dev/null 2>&1 || true' EXIT
           git worktree add "$WT" FETCH_HEAD
           (
             cd "$WT/${{ inputs.path }}"

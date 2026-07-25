@@ -99,7 +99,10 @@ func (CBSStorage) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 		currency = "CNY"
 	}
 
-	monthly, hourly := monthlyFromPrice(dp.ChargeUnit, dp.UnitPriceDiscount, dp.DiscountPrice)
+	// Prefer the discounted unit price, falling back to the undiscounted rate
+	// when the API did not populate a discount field.
+	unitPrice := preferDiscount(dp.UnitPriceDiscount, dp.UnitPrice)
+	monthly, hourly := monthlyFromPrice(dp.ChargeUnit, unitPrice, dp.DiscountPrice)
 	return []output.CostComponent{{
 		Name:        fmt.Sprintf("CBS %v (%vGB)", req.Params["DiskType"], req.Params["DiskSize"]),
 		Unit:        dp.ChargeUnit,

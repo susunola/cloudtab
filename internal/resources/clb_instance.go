@@ -112,7 +112,10 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 	}
 
 	ip := price.InstancePrice
-	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, ip.UnitPriceDiscount, ip.DiscountPrice)
+	// Prefer the discounted unit price, falling back to the undiscounted rate
+	// when the API did not populate a discount field.
+	unitPrice := preferDiscount(ip.UnitPriceDiscount, ip.UnitPrice)
+	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, unitPrice, ip.DiscountPrice)
 	label := fmt.Sprintf("CLB (%v)", req.Params["LoadBalancerType"])
 	comps := []output.CostComponent{{
 		Name:        label,
@@ -121,9 +124,12 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		MonthlyCost: monthly,
 		Currency:    currency,
 	}}
-	if price.BandwidthPrice.UnitPrice > 0 {
-		bw := price.BandwidthPrice
-		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bw.UnitPriceDiscount, bw.UnitPriceDiscount)
+	bw := price.BandwidthPrice
+	if bw.UnitPrice > 0 || bw.UnitPriceDiscount > 0 {
+		// Prefer the discounted unit price, falling back to the undiscounted rate
+		// when the API did not populate a discount field.
+		bwUnitPrice := preferDiscount(bw.UnitPriceDiscount, bw.UnitPrice)
+		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bwUnitPrice, bwUnitPrice)
 		comps = append(comps, output.CostComponent{
 			Name:        "CLB bandwidth",
 			Unit:        bw.ChargeUnit,

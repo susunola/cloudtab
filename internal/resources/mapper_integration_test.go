@@ -48,6 +48,49 @@ func TestCVMExtractAndParse(t *testing.T) {
 	}
 }
 
+// TestCVMBandwidthUnitPriceFallback verifies that a CVM response which carries
+// BandwidthPrice.UnitPrice but leaves UnitPriceDiscount at 0 still produces a
+// non-zero bandwidth cost. Previously monthlyFromPrice received 0/0 and emitted
+// a zero-cost line.
+func TestCVMBandwidthUnitPriceFallback(t *testing.T) {
+	m := CVMInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_instance.web",
+		Type:    "tencentcloud_instance",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"instance_type":              "SA2.MEDIUM4",
+			"image_id":                   "img-xxx",
+			"availability_zone":          "ap-guangzhou-6",
+			"internet_charge_type":       "BANDWIDTH_POSTPAID_BY_HOUR",
+			"internet_max_bandwidth_out": 10,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("CVM Extract: %v", err)
+	}
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPriceDiscount":0.5,"ChargeUnit":"HOUR","Currency":"CNY"},"BandwidthPrice":{"UnitPrice":0.2,"ChargeUnit":"HOUR"}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("CVM Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("CVM components = %d, want 2 (compute+bandwidth)", len(comps))
+	}
+	bw := comps[1]
+	if bw.Name != "Public bandwidth" {
+		t.Fatalf("second component = %q, want Public bandwidth", bw.Name)
+	}
+	wantMonthly := 0.2 * hoursPerMonth
+	if bw.MonthlyCost != wantMonthly {
+		t.Errorf("bandwidth monthly = %v, want %v", bw.MonthlyCost, wantMonthly)
+	}
+	if bw.HourlyCost != 0.2 {
+		t.Errorf("bandwidth hourly = %v, want 0.2", bw.HourlyCost)
+	}
+}
+
 // ----- CBS integration test -----
 
 func TestCBSExtractAndParse(t *testing.T) {
@@ -109,6 +152,46 @@ func TestCLBExtractAndParse(t *testing.T) {
 	}
 	if len(comps) == 0 {
 		t.Fatal("CLB returned 0 components")
+	}
+}
+
+// TestCLBBandwidthUnitPriceFallback verifies that a CLB response which carries
+// BandwidthPrice.UnitPrice but leaves UnitPriceDiscount at 0 still produces a
+// non-zero bandwidth cost.
+func TestCLBBandwidthUnitPriceFallback(t *testing.T) {
+	m := CLBInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_clb_instance.lb",
+		Type:    "tencentcloud_clb_instance",
+		Region:  "ap-beijing",
+		After: map[string]interface{}{
+			"network_type": "OPEN",
+			"charge_type":  "POSTPAID",
+			"bandwidth":    10,
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("CLB Extract: %v", err)
+	}
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPriceDiscount":0.3,"ChargeUnit":"HOUR","Currency":"CNY"},"BandwidthPrice":{"UnitPrice":0.15,"ChargeUnit":"HOUR"}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("CLB Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("CLB components = %d, want 2 (instance+bandwidth)", len(comps))
+	}
+	bw := comps[1]
+	if bw.Name != "CLB bandwidth" {
+		t.Fatalf("second component = %q, want CLB bandwidth", bw.Name)
+	}
+	wantMonthly := 0.15 * hoursPerMonth
+	if bw.MonthlyCost != wantMonthly {
+		t.Errorf("bandwidth monthly = %v, want %v", bw.MonthlyCost, wantMonthly)
+	}
+	if bw.HourlyCost != 0.15 {
+		t.Errorf("bandwidth hourly = %v, want 0.15", bw.HourlyCost)
 	}
 }
 
