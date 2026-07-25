@@ -306,6 +306,48 @@ tests so the bug classes cannot silently return.
   `TestRenderDiffMarkdownEscapesSkipReason`, `TestLoadPlanJSONAliasedProviderRegion`.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.8" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.8 — Full Tencent Cloud live coverage: 3 mapper bugs fixed
+
+A full 19-product live coverage run against the Tencent Cloud **international**
+site surfaced three mapper bugs that silently skipped (or mis-priced) resources.
+After the fixes the run prices **13/19** registered Tencent products; the
+remaining 6 are genuine international-site region/account limitations, not
+code defects.
+
+### Mapper fixes
+- **CBS `Placement` rejected** (`cbs_storage.go`): `InquiryPriceCreateDisks`
+  does not accept `Placement` (CBS disk pricing is zone-agnostic). The SDK
+  rejected it client-side, so every `tencentcloud_cbs_storage` was skipped.
+  Removed the field; regression `TestCBSExtractOmitsPlacement`.
+- **CloudHSM missing `HsmType`** (`cloudhsm_instance.go`): `InquiryPriceBuyVsm`
+  requires `HsmType` and the mapper never sent it. Now reads `hsm_type` from
+  the plan and defaults to `virtualization`. Regression `TestCloudHSMExtractSendsHsmType`.
+- **MongoDB charge-type enum** (`mongodb_instance.go`): the pricing API enum is
+  `PREPAID,POSTPAID_BY_HOUR` but Terraform's `POSTPAID` was passed through
+  verbatim, so the request was rejected. Normalized `POSTPAID` -> `POSTPAID_BY_HOUR`.
+  Regression `TestMongoDBExtractNormalizesPostpaid`.
+
+### Coverage notes
+- Priced live on intl: CVM, CBS, CLB, TDSQL-C, TDSQL, MariaDB, MySQL (USD),
+  Redis, MongoDB, ECM, Lighthouse, EIP (local StaticMapper).
+- **CloudHSM (`cloudhsm`) prices successfully but returns an upstream intl
+  pricing-API anomaly**: the API yields a coarse, region-independent placeholder
+  (¥150,000,000,000 for `virtualization`; ¥500,000,000,000 for
+  physical/GHSM/EHSM/SHSM) ~8 orders of magnitude above any real dedicated-HSM
+  monthly cost. The mapper correctly sends the required `HsmType` and Parse
+  faithfully reads `TotalCost`; the bogus figure is Tencent's intl data, not a
+  cloudtab defect. Treat cloudhsm intl estimates as unreliable.
+- Not priced (intl site limitations, not bugs): CWP/yunjing
+  (ServiceUnavailable), VPN gateway (account charge-type mismatch),
+  PostgreSQL & SQL Server (zone sold out / spec not recognized in
+  ap-guangzhou), GAAP (pricing API rejects the access-region value), Domain
+  (intl `DescribeDomainPriceList` param rejection).
+
+### Tests
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
