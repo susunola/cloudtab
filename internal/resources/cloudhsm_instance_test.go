@@ -10,6 +10,32 @@ import (
 
 func almostEqHSM(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
+func TestCloudHSMExtractSendsHsmType(t *testing.T) {
+	// InquiryPriceBuyVsm requires HsmType; the mapper must emit it (default
+	// "virtualization" when the plan omits it) or every cloudhsm instance is
+	// skipped with MissingParameter: HsmType.
+	req, err := CloudHSMInstance{}.Extract(parser.PlannedResource{
+		Type:   "tencentcloud_cloudhsm_instance",
+		Region: "ap-guangzhou",
+		After:  map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	if req.Params["HsmType"] != "virtualization" {
+		t.Fatalf("HsmType = %v, want default virtualization", req.Params["HsmType"])
+	}
+
+	req2, _ := CloudHSMInstance{}.Extract(parser.PlannedResource{
+		Type:   "tencentcloud_cloudhsm_instance",
+		Region: "ap-guangzhou",
+		After:  map[string]interface{}{"hsm_type": "GHSM"},
+	})
+	if req2.Params["HsmType"] != "GHSM" {
+		t.Fatalf("HsmType = %v, want GHSM from plan", req2.Params["HsmType"])
+	}
+}
+
 func TestCloudHSMExtract(t *testing.T) {
 	req, err := CloudHSMInstance{}.Extract(parser.PlannedResource{
 		Type:   "tencentcloud_cloudhsm_instance",

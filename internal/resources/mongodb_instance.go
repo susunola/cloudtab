@@ -52,6 +52,13 @@ func (MongoDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 	if chargeType == "" {
 		chargeType = "POSTPAID_BY_HOUR"
 	}
+	// Terraform's tencentcloud_mongodb_instance uses charge_type "POSTPAID",
+	// but the pricing API's InstanceChargeType enum is PREPAID,POSTPAID_BY_HOUR.
+	// Without this normalization the request is rejected with an enum error and
+	// every MongoDB instance is skipped.
+	if chargeType == "POSTPAID" {
+		chargeType = "POSTPAID_BY_HOUR"
+	}
 
 	// cloudtab reports a monthly run-rate, so PREPAID is always priced for a
 	// single month (Period=1). Pricing the user's real multi-month term would

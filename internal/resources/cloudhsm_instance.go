@@ -3,6 +3,7 @@ package resources
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
@@ -29,6 +30,14 @@ func (CloudHSMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest,
 		count = 1
 	}
 
+	// HsmType is a required parameter of InquiryPriceBuyVsm. Valid values:
+	// virtualization, physical, GHSM, EHSM, SHSM. Default to "virtualization"
+	// (the most common single-VSM purchase) when the plan omits it.
+	hsmType := strings.TrimSpace(getStr(r.After, "hsm_type"))
+	if hsmType == "" {
+		hsmType = "virtualization"
+	}
+
 	params := map[string]interface{}{
 		"GoodsNum": count,
 		"PayMode":  1, // 1 = prepaid (monthly)
@@ -37,6 +46,7 @@ func (CloudHSMInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest,
 		"TimeUnit": "m",
 		"Currency": "CNY",
 		"Type":     "CREATE",
+		"HsmType":  hsmType,
 	}
 
 	return pricing.PriceRequest{
