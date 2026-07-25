@@ -371,7 +371,23 @@ figure. Domestic pricing is unaffected.
 ### Tests
 - `TestCloudHSMUnavailableOnIntl` asserts cloudhsm on intl returns the skip
   reason (no network) and that it stays available on domestic.
-- All packages pass `go vet` and `go test -race`.
+  - All packages pass `go vet` and `go test -race`.
+EOF
+elif [[ "$VERSION" == "v0.3.10" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.10 — minor fixes & perf
+
+From ad38e63: CVM/CLB/CBS mappers fall back to UnitPrice when TotalCost is
+absent; AWS backend restricted to commercial regions; CI grep -P replaced with
+sed -E; removed stray worktree; added regression tests.
+
+From 54975cf: Engine now precomputes the site rootDomain once at NewEngine
+(removes redundant per-request string normalization); added
+TestCloudHSMIntlSkipsEvenWithStaleCache guarding that cloudhsm is skipped on
+intl even with a stale cached placeholder price.
+
+Still 12/19 reliable on the intl site (cwp, vpn, postgresql, sqlserver, gaap,
+domain, cloudhsm are genuine intl-site limitations, not bugs).
 EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
