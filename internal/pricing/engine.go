@@ -310,6 +310,21 @@ func (e *Engine) Close() error {
 // site-namespaced cache key so a healthy run touches each distinct SKU at most
 // once, keeping us well under the InquiryPrice QPS limit.
 func (e *Engine) Query(req PriceRequest) ([]byte, error) {
+	// Known-unavailable products on a site (e.g. the intl CloudHSM pricing API
+	// returns a placeholder rather than a real quote) are skipped before any
+	// cache lookup or network call. Short-circuiting here — not in dispatch —
+	// also guarantees a stale cached value can never be surfaced, so the skip
+	// takes effect immediately for every user, not just after the cache TTL.
+	siteKey := "domestic"
+	if rootDomainForSite(e.cfg.Site) == "intl.tencentcloudapi.com" {
+		siteKey = "intl"
+	}
+	if h, ok := handlers[req.Product]; ok {
+		if reason, ok := h.unavailableOnSites[siteKey]; ok {
+			return nil, fmt.Errorf("product %q unavailable on %s site: %s", req.Product, siteKey, reason)
+		}
+	}
+
 	// The cache key must include the site: the Chinese-mainland and
 	// International sites return different prices (and possibly currencies) for
 	// an otherwise identical request, so their responses must never collide.

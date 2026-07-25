@@ -163,7 +163,7 @@ Sample output:
 | TDSQL MySQL | `tencentcloud_dcdb_instance` | `dcdb:DescribeDCDBPrice` |
 | GAAP | `tencentcloud_gaap_proxy` | `gaap:InquiryPriceCreateProxy` |
 | CWP (Host Security) | `tencentcloud_cwp_license_order` | `yunjing:InquiryPriceOpenProVersionPrepaid` |
-| CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` |
+| CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` (intl: unavailable — the API returns a placeholder price, not a real quote) |
 | Domain | `tencentcloud_domain_registration` | `domain:DescribeDomainPriceList` |
 
 ### AWS

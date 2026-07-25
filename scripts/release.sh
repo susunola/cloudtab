@@ -348,6 +348,31 @@ code defects.
 ### Tests
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.9" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.9 — CloudHSM skipped on the international site (placeholder price)
+
+The international site's `InquiryPriceBuyVsm` returns a coarse placeholder
+(≈¥150,000,000,000 for `virtualization`; ≈¥500,000,000,000 for physical/GHSM/
+EHSM/SHSM) that is identical across regions and ~7–8 orders of magnitude above
+any real dedicated-HSM monthly cost. It is not a quotable price, so cloudhsm is
+now **skipped with a clear reason on `intl`** instead of surfacing a misleading
+figure. Domestic pricing is unaffected.
+
+### How it works
+- A new `unavailableOnSites` field on each product handler declares which sites
+  a product cannot be priced on, with a human-readable reason. The engine checks
+  it in `Query`, **before** the cache lookup and any network call — so a stale
+  cached placeholder can never be surfaced either, and the skip takes effect
+  immediately for every user (not just after the 24h cache TTL).
+- No magic-number heuristics: the decision is a product/site fact, not a
+  threshold on the returned amount.
+
+### Tests
+- `TestCloudHSMUnavailableOnIntl` asserts cloudhsm on intl returns the skip
+  reason (no network) and that it stays available on domestic.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

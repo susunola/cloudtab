@@ -47,6 +47,14 @@ type productHandler struct {
 	product   string
 	newClient clientFactory
 	actions   map[string]actionInvoker
+
+	// unavailableOnSites maps a site selector (e.g. "intl") to a human-readable
+	// reason the product cannot be priced there. The engine consults this
+	// before dispatching the request, so the resource degrades to a clean
+	// "skipped" line instead of calling an API that returns a known-bad result
+	// (for example a placeholder price rather than a real quote). Keyed by the
+	// normalized site ("intl" | "domestic") produced from Config.Site.
+	unavailableOnSites map[string]string
 }
 
 // handlers is the product registry consulted by Engine.Query. Adding a product
@@ -316,6 +324,15 @@ var handlers = map[string]productHandler{
 		product: "cloudhsm",
 		newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
 			return cloudhsm.NewClient(cred, region, prof)
+		},
+		// The international site's InquiryPriceBuyVsm returns a coarse placeholder
+		// (≈¥150,000,000,000 for virtualization; ≈¥500,000,000,000 for physical/
+		// GHSM/EHSM/SHSM) that is identical across regions and ~7-8 orders of
+		// magnitude above any real dedicated-HSM monthly cost. It is not a
+		// quotable price, so we skip the product on intl rather than surface a
+		// misleading figure. Domestic pricing is unaffected.
+		unavailableOnSites: map[string]string{
+			"intl": "CloudHSM cannot be priced on the international site: Tencent's InquiryPriceBuyVsm returns a placeholder (≈¥150,000,000,000 for virtualization), not a real quote.",
 		},
 		actions: map[string]actionInvoker{
 			"InquiryPriceBuyVsm": func(client interface{}, params map[string]interface{}) ([]byte, error) {

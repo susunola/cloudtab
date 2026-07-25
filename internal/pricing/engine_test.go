@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -195,4 +196,41 @@ func TestJSONFieldNamesMemoizedAndRaceSafe(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestCloudHSMUnavailableOnIntl is a regression guard for the placeholder-price
+// anomaly: the international site's InquiryPriceBuyVsm returns a bogus fixed
+// figure (≈¥150,000,000,000 for virtualization) instead of a real quote, so
+// cloudhsm must be skipped on intl with a clear reason rather than surfacing
+// that number. The short-circuit fires before any network call, so this test
+// needs no real credentials or network.
+func TestCloudHSMUnavailableOnIntl(t *testing.T) {
+	// Registration: cloudhsm declares intl as unavailable, but stays available
+	// on domestic (domestic pricing is unaffected by the intl placeholder bug).
+	h := handlers["cloudhsm"]
+	if reason, ok := h.unavailableOnSites["intl"]; !ok || reason == "" {
+		t.Fatalf("cloudhsm.unavailableOnSites[intl] not set")
+	}
+	if _, ok := h.unavailableOnSites["domestic"]; ok {
+		t.Errorf("cloudhsm should remain available on domestic; unexpected unavailableOnSites[domestic]")
+	}
+
+	// Dispatch on intl must short-circuit with a skip reason before any API call.
+	e := &Engine{cfg: Config{SecretID: "dummy", SecretKey: "dummy", Site: "intl"}}
+	req := PriceRequest{
+		Product: "cloudhsm",
+		Action:  "InquiryPriceBuyVsm",
+		Region:  "ap-guangzhou",
+		Params: map[string]interface{}{
+			"GoodsNum": 1, "PayMode": 1, "TimeSpan": "1",
+			"TimeUnit": "m", "Currency": "CNY", "Type": "CREATE", "HsmType": "virtualization",
+		},
+	}
+	_, err := e.Query(req)
+	if err == nil {
+		t.Fatalf("expected cloudhsm on intl to be unavailable, got nil error")
+	}
+	if !strings.Contains(err.Error(), "unavailable on intl site") {
+		t.Errorf("cloudhsm intl error = %q, want it to mention %q", err.Error(), "unavailable on intl site")
+	}
 }
