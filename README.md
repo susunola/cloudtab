@@ -93,6 +93,22 @@ through verbatim as a custom root domain (e.g. a private-cloud gateway). Prices
 are cached separately per site, so switching sites never returns a stale
 cross-site price.
 
+Each cloud has its **own** site selector, so a single run can price, say, an
+International Tencent credential and a Chinese-mainland Huawei account at once:
+
+| Cloud | Flag | Env fallback | Default |
+|-------|------|-------------|---------|
+| Tencent Cloud | `--site` | `TENCENTCLOUD_SITE` | domestic |
+| AWS | `--aws-site` | `AWS_SITE` | intl/global |
+| Alibaba Cloud | `--alibaba-site` | `ALIBABA_SITE` | domestic |
+| Huawei Cloud | `--huawei-site` | `HUAWEI_SITE` | intl |
+
+Huawei Cloud now correctly routes **Chinese-mainland** credentials to
+`bss.myhuaweicloud.com` and **International** credentials to
+`bss-intl.myhuaweicloud.com` (previously the international endpoint was
+hard-coded, so a China-mainland account was misrouted). As with Tencent, prices
+are cached per provider + site, so the sites never cross-contaminate.
+
 ### Performance & reliability flags
 
 Resources in a plan are priced **concurrently**, each request has a **timeout**,

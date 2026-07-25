@@ -74,8 +74,12 @@ func newAWSBackend(cfg Config) (backend, error) {
 	// EC2 metadata service cannot hang the whole cost run.
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.requestTimeout())
 	defer cancel()
+	region := awsPricingAPIRegion // us-east-1 (global default)
+	if normalizeSite(cfg.AWSSite) == "domestic" {
+		region = "cn-north-1" // AWS China partition (aws-cn)
+	}
 	opts := []func(*awsconfig.LoadOptions) error{
-		awsconfig.WithRegion(awsPricingAPIRegion),
+		awsconfig.WithRegion(region),
 	}
 	if cfg.AWSAccessKeyID != "" && cfg.AWSSecretAccessKey != "" {
 		opts = append(opts, awsconfig.WithCredentialsProvider(

@@ -61,6 +61,13 @@ func newAlibabaBackend(cfg Config) (backend, error) {
 	to := cfg.requestTimeout()
 	client.SetReadTimeout(to)
 	client.SetConnectTimeout(to)
+	if normalizeSite(cfg.AlibabaSite) == "intl" {
+		// The international site uses a distinct BSS OpenAPI endpoint. The
+		// Alibaba SDK resolves the host from client.Domain (which takes
+		// precedence over the regional default), so we set it directly rather
+		// than adding a dependency.
+		client.Domain = "bp.aliyuncs.com"
+	}
 	return &alibabaBackend{client: client}, nil
 }
 

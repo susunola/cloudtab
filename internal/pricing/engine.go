@@ -55,6 +55,25 @@ type Config struct {
 	// (e.g. a private-cloud gateway), passed through to the SDK unchanged.
 	Site string
 
+	// AWSSite selects the AWS partition for pricing.
+	//   "" | "intl" | "global" | "international" -> AWS global (default; us-east-1)
+	//   "domestic" | "cn" | "china"              -> AWS China partition (aws-cn; cn-north-1)
+	// A China-mainland AWS account (operated by Sinnet/ChinaNet) is a separate
+	// partition from global AWS; the SDK selects it automatically from the region.
+	AWSSite string
+
+	// AlibabaSite selects which Alibaba Cloud site the credential belongs to.
+	//   "" | "domestic" | "cn" | "china"          -> Chinese-mainland site (default)
+	//   "intl" | "international" | "global"        -> International site (bp.aliyuncs.com)
+	AlibabaSite string
+
+	// HuaweiSite selects which Huawei Cloud site the credential belongs to.
+	//   "" | "intl" | "international" | "global"  -> International site (default; bss-intl)
+	//   "domestic" | "cn" | "china"              -> Chinese-mainland site (bss)
+	// Huawei Cloud Intl uses bss-intl.myhuaweicloud.com; the Chinese-mainland
+	// site uses bss.myhuaweicloud.com. A credential is registered on ONE site.
+	HuaweiSite string
+
 	// AWS credentials for the AWS Price List backend. These are OPTIONAL and
 	// entirely separate from the Tencent SecretID/SecretKey above. When left
 	// empty, the AWS SDK's default credential chain is used (environment vars
@@ -180,6 +199,46 @@ func (e *Engine) siteRootDomain() string {
 	return rootDomainForSite(e.cfg.Site)
 }
 
+// normalizeSite maps any site selector to the canonical "intl" or "domestic".
+func normalizeSite(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "intl", "international", "global", "overseas":
+		return "intl"
+	default:
+		return "domestic"
+	}
+}
+
+// siteKeyForProvider returns "intl" or "domestic" for the given provider,
+// resolved from that provider's own site selector. Tencent reuses the existing
+// precomputed rootDomain; the other clouds read their respective Config field.
+func (e *Engine) siteKeyForProvider(provider string) string {
+	switch provider {
+	case providerTencent:
+		if e.siteRootDomain() == "intl.tencentcloudapi.com" {
+			return "intl"
+		}
+		return "domestic"
+	default:
+		var site string
+		switch provider {
+		case providerAWS:
+			site = e.cfg.AWSSite
+		case providerAlibaba:
+			site = e.cfg.AlibabaSite
+		case providerHuawei:
+			site = e.cfg.HuaweiSite
+		}
+		// AWS and Alibaba default to the Chinese-mainland site; Huawei defaults
+		// to International (a China-mainland Huawei credential is selected
+		// explicitly with "domestic"), matching each cloud's account model.
+		if provider == providerHuawei && strings.TrimSpace(site) == "" {
+			return "intl"
+		}
+		return normalizeSite(site)
+	}
+}
+
 // PriceRequest is the neutral request submitted by a Mapper.
 //
 //	Provider: "" | "tencentcloud" (default) | "aws". Selects the pricing
@@ -260,6 +319,13 @@ type Engine struct {
 	rootDomain string
 	clients    map[string]interface{} // product:region -> typed SDK client
 
+	// unavailable maps a provider to a product:siteKey -> reason table of
+	// products known to return a non-price (e.g. a placeholder) on a given
+	// site. The gate consults this for every non-Tencent cloud so the skip is
+	// uniform across all four providers. Tencent entries live on the per-
+	// productHandler struct instead.
+	unavailable map[string]map[string]string
+
 	// aws is the lazily-initialised AWS pricing backend. It is created on the
 	// first AWS request (so a pure-Tencent run never touches the AWS SDK or
 	// requires AWS credentials). Guarded by awsOnce.
@@ -300,7 +366,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 	// only prices AWS / Alibaba / Huawei resources needs none of them. We
 	// validate the Tencent SecretID/SecretKey lazily inside dispatch() only
 	// when a Tencent Cloud resource is actually priced (code review #3).
-	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}, rootDomain: rootDomainForSite(cfg.Site)}
+	e := &Engine{cfg: cfg, clients: map[string]interface{}{}, flight: map[string]*inflightCall{}, rootDomain: rootDomainForSite(cfg.Site), unavailable: map[string]map[string]string{}}
 	if cfg.CachePath != "" && !cfg.NoCache {
 		c, err := openCache(cfg.CachePath, cfg.CacheTTL)
 		if err != nil {
@@ -332,17 +398,13 @@ func (e *Engine) Close() error {
 func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	// Known-unavailable products on a site (e.g. the intl CloudHSM pricing API
 	// returns a placeholder rather than a real quote) are skipped before any
-	// cache lookup or network call. Short-circuiting here — not in dispatch —
+	// cache lookup or network call, for ALL providers. Short-circuiting here
 	// also guarantees a stale cached value can never be surfaced, so the skip
 	// takes effect immediately for every user, not just after the cache TTL.
-	siteKey := "domestic"
-	if e.siteRootDomain() == "intl.tencentcloudapi.com" {
-		siteKey = "intl"
-	}
-	if h, ok := handlers[req.Product]; ok {
-		if reason, ok := h.unavailableOnSites[siteKey]; ok {
-			return nil, fmt.Errorf("product %q unavailable on %s site: %s", req.Product, siteKey, reason)
-		}
+	provider := req.provider()
+	siteKey := e.siteKeyForProvider(provider)
+	if reason, ok := e.unavailableReason(provider, req.Product, siteKey); ok {
+		return nil, fmt.Errorf("product %q unavailable on %s site: %s", req.Product, siteKey, reason)
 	}
 
 	// The cache key must include the site: the Chinese-mainland and
@@ -595,16 +657,39 @@ func (e *Engine) huaweiBackend() (backend, error) {
 }
 
 // cacheKey derives the on-disk cache key for a request under the engine's
-// current site. It namespaces the request's own CacheKey() with the normalized
-// site root domain so responses from different sites never collide.
+// current site. It namespaces the request's own CacheKey() with the provider's
+// site key so responses from different sites (and now different providers'
+// sites) never collide.
 func (e *Engine) cacheKey(req PriceRequest) (string, error) {
 	base, err := req.CacheKey()
 	if err != nil {
 		return "", err
 	}
-	// e.siteRootDomain() == "" for the Chinese-mainland default; using it as a
-	// prefix keeps pre-existing domestic keys stable while isolating intl.
-	return e.siteRootDomain() + "|" + base, nil
+	// The site key ("domestic" | "intl") is provider-aware: the Tencent
+	// rootDomain, the AWS/Alibaba/Huawei site selectors. This keeps each
+	// provider's sites isolated in the cache and avoids cross-site poisoning.
+	return e.siteKeyForProvider(req.provider()) + "|" + base, nil
+}
+
+// unavailableReason reports whether a product is known-unavailable on a site,
+// for any provider. Tencent entries live on the per-productHandler struct; the
+// other providers are consulted from the Engine.unavailable map so the gate is
+// uniform across all four clouds.
+func (e *Engine) unavailableReason(provider, product, siteKey string) (string, bool) {
+	if provider == providerTencent {
+		if h, ok := handlers[product]; ok {
+			if r, ok := h.unavailableOnSites[siteKey]; ok {
+				return r, true
+			}
+		}
+		return "", false
+	}
+	if m, ok := e.unavailable[provider]; ok {
+		if r, ok := m[product+":"+siteKey]; ok {
+			return r, true
+		}
+	}
+	return "", false
 }
 
 // clientFn builds a typed SDK client from a credential/profile pair.

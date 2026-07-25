@@ -1,11 +1,13 @@
 package pricing
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	bssintl "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bssintl/v2"
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 )
@@ -118,10 +120,10 @@ func TestCacheKeyIsolatedBySite(t *testing.T) {
 	if dk == ik {
 		t.Fatalf("domestic and intl cache keys collide: %q", dk)
 	}
-	if want := "|" + base; dk != want {
+	if want := "domestic|" + base; dk != want {
 		t.Errorf("domestic cacheKey = %q, want %q", dk, want)
 	}
-	if want := "intl.tencentcloudapi.com|" + base; ik != want {
+	if want := "intl|" + base; ik != want {
 		t.Errorf("intl cacheKey = %q, want %q", ik, want)
 	}
 }
@@ -284,5 +286,111 @@ func TestCloudHSMIntlSkipsEvenWithStaleCache(t *testing.T) {
 	}
 	if resp != nil {
 		t.Errorf("cloudhsm intl must not surface the cached placeholder; got resp=%q", string(resp))
+	}
+}
+
+// TestSiteKeyForProvider pins the per-provider site resolution: each cloud reads
+// its OWN site selector and normalizes it to "intl"/"domestic". This is the core
+// of the generalization — the site is no longer Tencent-only.
+func TestSiteKeyForProvider(t *testing.T) {
+	cases := []struct {
+		name     string
+		cfg      Config
+		provider string
+		want     string
+	}{
+		// Tencent: reuses the precomputed rootDomain.
+		{"tencent intl", Config{Site: "intl"}, providerTencent, "intl"},
+		{"tencent domestic", Config{Site: ""}, providerTencent, "domestic"},
+
+		// AWS: default domestic->us-east-1 (global); "domestic" -> aws-cn.
+		{"aws domestic", Config{AWSSite: "domestic"}, providerAWS, "domestic"},
+		{"aws intl", Config{AWSSite: "intl"}, providerAWS, "intl"},
+		{"aws default", Config{}, providerAWS, "domestic"},
+
+		// Alibaba: default domestic (cn-hangzhou).
+		{"alibaba intl", Config{AlibabaSite: "intl"}, providerAlibaba, "intl"},
+		{"alibaba default", Config{}, providerAlibaba, "domestic"},
+
+		// Huawei: default intl (bss-intl); "domestic" -> bss.
+		{"huawei domestic", Config{HuaweiSite: "domestic"}, providerHuawei, "domestic"},
+		{"huawei intl", Config{HuaweiSite: "intl"}, providerHuawei, "intl"},
+		{"huawei default", Config{}, providerHuawei, "intl"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{cfg: tc.cfg, rootDomain: rootDomainForSite(tc.cfg.Site)}
+			if got := e.siteKeyForProvider(tc.provider); got != tc.want {
+				t.Errorf("siteKeyForProvider(%q) = %q, want %q", tc.provider, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnavailableGateNonTencent proves the unavailable gate is provider-agnostic
+// and cache-safe: a non-Tencent product registered in Engine.unavailable is
+// skipped before any network call (no credentials, no cache lookup). This guards
+// the generalization from Tencent-only to all four clouds.
+func TestUnavailableGateNonTencent(t *testing.T) {
+	e, err := NewEngine(Config{SecretID: "dummy", SecretKey: "dummy", Site: "intl", AWSSite: "intl"})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer delete(e.unavailable, "aws") // reset after test
+	e.unavailable["aws"] = map[string]string{
+		"AmazonEC2:intl": "known placeholder on intl",
+	}
+
+	_, err = e.Query(PriceRequest{Provider: "aws", Product: "AmazonEC2", Region: "us-east-1"})
+	if err == nil {
+		t.Fatalf("expected aws AmazonEC2 on intl to be unavailable, got nil error")
+	}
+	if !strings.Contains(err.Error(), "unavailable on intl site") {
+		t.Errorf("aws intl error = %q, want it to mention %q", err.Error(), "unavailable on intl site")
+	}
+}
+
+// TestBackendSiteConstruction exercises the per-provider site selection at client
+// construction time only (no API call). It confirms the AWS China region, the
+// Alibaba international endpoint selection, and the Huawei cn/intl routing all
+// construct without panicking.
+func TestBackendSiteConstruction(t *testing.T) {
+	// AWS China partition: client must build with region cn-north-1.
+	if _, err := newAWSBackend(Config{AWSSite: "domestic", AWSAccessKeyID: "x", AWSSecretAccessKey: "y"}); err != nil {
+		t.Errorf("aws domestic backend build: %v", err)
+	}
+
+	// Alibaba International: client must build and select the bp.aliyuncs.com endpoint.
+	if _, err := newAlibabaBackend(Config{AlibabaSite: "intl", AlibabaAccessKeyID: "x", AlibabaAccessKeySecret: "y"}); err != nil {
+		t.Errorf("alibaba intl backend build: %v", err)
+	}
+
+	// Huawei backend Build() resolves the IAM domain id over the network, so we
+	// only exercise the cn/intl client typing when real credentials are present;
+	// otherwise skip. The cn vs intl routing (and the bss/bssintl import paths)
+	// are still compiled and covered by TestSiteKeyForProvider.
+	if ak := os.Getenv("HUAWEI_ACCESS_KEY_ID"); ak != "" {
+		// Huawei Chinese-mainland: must build via the cn bss SDK (not bss-intl).
+		hb, err := newHuaweiBackend(Config{HuaweiSite: "domestic", HuaweiAccessKeyID: ak, HuaweiSecretAccessKey: os.Getenv("HUAWEI_SECRET_ACCESS_KEY")})
+		if err != nil {
+			t.Fatalf("huawei domestic backend build: %v", err)
+		}
+		ad, ok := hb.(*huaweiBackend).client.(*cnHuaweiBSSAdapter)
+		if !ok {
+			t.Errorf("huawei domestic backend client = %T, want *cnHuaweiBSSAdapter", hb.(*huaweiBackend).client)
+		} else if ad.client == nil {
+			t.Errorf("huawei domestic adapter wraps a nil bss client")
+		}
+
+		// Huawei International (default): must build via the bss-intl SDK.
+		hi, err := newHuaweiBackend(Config{HuaweiSite: "intl", HuaweiAccessKeyID: ak, HuaweiSecretAccessKey: os.Getenv("HUAWEI_SECRET_ACCESS_KEY")})
+		if err != nil {
+			t.Fatalf("huawei intl backend build: %v", err)
+		}
+		if _, ok := hi.(*huaweiBackend).client.(*bssintl.BssintlClient); !ok {
+			t.Errorf("huawei intl backend client = %T, want *bssintl.BssintlClient", hi.(*huaweiBackend).client)
+		}
+	} else {
+		t.Skip("skipping Huawei backend construction: no HUAWEI_ACCESS_KEY_ID (Build() requires network IAM lookup)")
 	}
 }

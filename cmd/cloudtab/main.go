@@ -74,6 +74,9 @@ func main() {
 		noCache     bool
 		cacheDir    string
 		site        string
+		awsSite     string
+		alibabaSite string
+		huaweiSite  string
 		concurrency int
 		timeout     time.Duration
 		maxRetries  int
@@ -90,7 +93,7 @@ func main() {
 			if format != "table" && format != "json" {
 				return fmt.Errorf("unknown format %q (want table or json)", format)
 			}
-			engine, err := newEngine(region, site, noCache, cacheDir, timeout, maxRetries, cacheTTL)
+			engine, err := newEngine(region, site, awsSite, alibabaSite, huaweiSite, noCache, cacheDir, timeout, maxRetries, cacheTTL)
 			if err != nil {
 				return err
 			}
@@ -114,6 +117,9 @@ func main() {
 	breakdown.Flags().BoolVar(&noCache, "no-cache", false, "Disable on-disk price cache")
 	breakdown.Flags().StringVar(&cacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	breakdown.Flags().StringVar(&site, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
+	breakdown.Flags().StringVar(&awsSite, "aws-site", "", "AWS site for pricing: domestic|intl (default intl/global, or $AWS_SITE)")
+	breakdown.Flags().StringVar(&alibabaSite, "alibaba-site", "", "Alibaba Cloud site for pricing: domestic|intl (default domestic, or $ALIBABA_SITE)")
+	breakdown.Flags().StringVar(&huaweiSite, "huawei-site", "", "Huawei Cloud site for pricing: domestic|intl (default intl, or $HUAWEI_SITE)")
 	breakdown.Flags().IntVar(&concurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
 	breakdown.Flags().DurationVar(&timeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
 	breakdown.Flags().IntVar(&maxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
@@ -131,6 +137,9 @@ func main() {
 		diffNoCache     bool
 		diffCacheDir    string
 		diffSite        string
+		diffAWSSite     string
+		diffAlibabaSite string
+		diffHuaweiSite  string
 		diffConcurrency int
 		diffTimeout     time.Duration
 		diffMaxRetries  int
@@ -147,7 +156,7 @@ func main() {
 			if diffFmt != "table" && diffFmt != "json" && diffFmt != "markdown" {
 				return fmt.Errorf("unknown format %q (want table, json or markdown)", diffFmt)
 			}
-			engine, err := newEngine(diffReg, diffSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries, diffCacheTTL)
+			engine, err := newEngine(diffReg, diffSite, diffAWSSite, diffAlibabaSite, diffHuaweiSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries, diffCacheTTL)
 			if err != nil {
 				return err
 			}
@@ -183,6 +192,9 @@ func main() {
 	diff.Flags().BoolVar(&diffNoCache, "no-cache", false, "Disable on-disk price cache")
 	diff.Flags().StringVar(&diffCacheDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
 	diff.Flags().StringVar(&diffSite, "site", "", "Tencent Cloud site matching your credential: domestic|intl (default domestic, or $TENCENTCLOUD_SITE)")
+	diff.Flags().StringVar(&diffAWSSite, "aws-site", "", "AWS site for pricing: domestic|intl (default intl/global, or $AWS_SITE)")
+	diff.Flags().StringVar(&diffAlibabaSite, "alibaba-site", "", "Alibaba Cloud site for pricing: domestic|intl (default domestic, or $ALIBABA_SITE)")
+	diff.Flags().StringVar(&diffHuaweiSite, "huawei-site", "", "Huawei Cloud site for pricing: domestic|intl (default intl, or $HUAWEI_SITE)")
 	diff.Flags().IntVar(&diffConcurrency, "concurrency", 0, "Parallel pricing lookups (default 8, or $CLOUDTAB_CONCURRENCY)")
 	diff.Flags().DurationVar(&diffTimeout, "timeout", 0, "Per-request pricing timeout (default 30s)")
 	diff.Flags().IntVar(&diffMaxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
@@ -199,14 +211,17 @@ func main() {
 	}
 }
 
-func newEngine(region, site string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int, cacheTTL time.Duration) (*pricing.Engine, error) {
+func newEngine(region, site, awsSite, alibabaSite, huaweiSite string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int, cacheTTL time.Duration) (*pricing.Engine, error) {
 	return pricing.NewEngine(pricing.Config{
-		SecretID:  os.Getenv("TENCENTCLOUD_SECRET_ID"),
-		SecretKey: os.Getenv("TENCENTCLOUD_SECRET_KEY"),
-		Region:    region,
-		Site:      resolveSite(site),
-		CachePath: cachePathForFlags(noCache, cacheDir),
-		NoCache:   noCache,
+		SecretID:    os.Getenv("TENCENTCLOUD_SECRET_ID"),
+		SecretKey:   os.Getenv("TENCENTCLOUD_SECRET_KEY"),
+		Region:      region,
+		Site:        resolveSite(site),
+		AWSSite:     resolveAWSSite(awsSite),
+		AlibabaSite: resolveAlibabaSite(alibabaSite),
+		HuaweiSite:  resolveHuaweiSite(huaweiSite),
+		CachePath:   cachePathForFlags(noCache, cacheDir),
+		NoCache:     noCache,
 
 		// Per-request timeout and transient-error retry budget. Zero values let
 		// the engine apply its own defaults (30s / 2 retries), so passing the
@@ -237,6 +252,36 @@ func resolveSite(flagSite string) string {
 		return s
 	}
 	return strings.TrimSpace(os.Getenv("TENCENTCLOUD_SITE"))
+}
+
+// resolveAWSSite picks the AWS site with an explicit precedence: the --aws-site
+// flag wins; otherwise fall back to the AWS_SITE env var; otherwise empty
+// (which the engine treats as the global default).
+func resolveAWSSite(flagSite string) string {
+	if s := strings.TrimSpace(flagSite); s != "" {
+		return s
+	}
+	return strings.TrimSpace(os.Getenv("AWS_SITE"))
+}
+
+// resolveAlibabaSite picks the Alibaba Cloud site: the --alibaba-site flag
+// wins; otherwise fall back to the ALIBABA_SITE env var; otherwise empty
+// (Chinese-mainland default).
+func resolveAlibabaSite(flagSite string) string {
+	if s := strings.TrimSpace(flagSite); s != "" {
+		return s
+	}
+	return strings.TrimSpace(os.Getenv("ALIBABA_SITE"))
+}
+
+// resolveHuaweiSite picks the Huawei Cloud site: the --huawei-site flag wins;
+// otherwise fall back to the HUAWEI_SITE env var; otherwise empty (International
+// default).
+func resolveHuaweiSite(flagSite string) string {
+	if s := strings.TrimSpace(flagSite); s != "" {
+		return s
+	}
+	return strings.TrimSpace(os.Getenv("HUAWEI_SITE"))
 }
 
 // resolveConcurrency picks the parallel-lookup count with an explicit

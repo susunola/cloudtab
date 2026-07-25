@@ -104,7 +104,7 @@ func TestEngineCreationWithoutTencentCreds(t *testing.T) {
 	// actually priced), so a multi-cloud plan must not require them up front.
 	os.Unsetenv("TENCENTCLOUD_SECRET_ID")
 	os.Unsetenv("TENCENTCLOUD_SECRET_KEY")
-	eng, err := newEngine("ap-guangzhou", "", false, t.TempDir(), 0, 0, 0)
+	eng, err := newEngine("ap-guangzhou", "", "", "", "", false, t.TempDir(), 0, 0, 0)
 	if err != nil {
 		t.Fatalf("newEngine without Tencent creds: %v (want no error)", err)
 	}
