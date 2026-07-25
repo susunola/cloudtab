@@ -389,6 +389,60 @@ intl even with a stale cached placeholder price.
 Still 12/19 reliable on the intl site (cwp, vpn, postgresql, sqlserver, gaap,
 domain, cloudhsm are genuine intl-site limitations, not bugs).
 EOF
+elif [[ "$VERSION" == "v0.3.11" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.11 — site (domestic/intl) generalized to all four clouds
+
+The `site` concept was previously Tencent-only. It is now a first-class,
+per-provider selector, so a single run can price, e.g. an International Tencent
+credential and a Chinese-mainland Huawei account at once.
+
+### Per-provider site selectors
+Each cloud now has its **own** site flag (default in parentheses), with an env
+fallback (flag takes precedence):
+- Tencent Cloud: `--site` (`TENCENTCLOUD_SITE`) — domestic
+- AWS: `--aws-site` (`AWS_SITE`) — intl/global (us-east-1)
+- Alibaba Cloud: `--alibaba-site` (`ALIBABA_SITE`) — domestic (cn-hangzhou)
+- Huawei Cloud: `--huawei-site` (`HUAWEI_SITE`) — intl (bss-intl)
+
+AWS `domestic` selects the `aws-cn` partition (region `cn-north-1`); Alibaba
+`intl` points at the BSS OpenAPI international endpoint `bp.aliyuncs.com`.
+
+### Huawei cn/intl routing fix (latent misroute bug)
+Huawei Cloud was previously hard-coded to the International (`bss-intl`)
+SDK package, so a Chinese-mainland credential was wrongly sent to
+`bss-intl.myhuaweicloud.com`. The backend now branches on `HuaweiSite`:
+- `domestic` → the `bss` (cn) SDK → `bss.myhuaweicloud.com`
+- `intl`/default → the `bssintl` SDK → `bss-intl.myhuaweicloud.com`
+
+The cn client is wrapped in an adapter that satisfies the same
+interface as the intl client (request/response bodies are JSON-identical across
+the two SDK packages), so `query()` stays type-agnostic. `project_id` injection
+is preserved for both sites, and the cn service's single supported endpoint
+region (`cn-north-1`) is used (the intl default `cn-north-4` is not valid for
+the cn service).
+
+### Generalized "unavailable product" gate
+The CloudHSM-on-intl skip was Tencent-specific. The gate is now uniform across
+all four clouds via `Engine.unavailable`: any provider can declare a
+product unavailable on a site ("intl"/"domestic") with a reason, and the skip
+fires before the cache lookup and any network call — so a stale cached value
+can never be surfaced and the skip takes effect immediately for every user.
+
+### Cache keys are now site-namespaced for all providers
+`cacheKey` prefixes with the provider's site key (previously only Tencent's
+rootDomain), so responses from different sites of every cloud are isolated and
+never cross-contaminate.
+
+### Tests
+- New: `TestSiteKeyForProvider` (per-provider site resolution),
+  `TestUnavailableGateNonTencent` (provider-agnostic, cache-safe gate),
+  `TestBackendSiteConstruction` (AWS China region, Alibaba intl endpoint,
+  Huawei cn/intl routing).
+- All existing tests preserved, including `TestCloudHSMUnavailableOnIntl` and
+  `TestCloudHSMIntlSkipsEvenWithStaleCache`.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
