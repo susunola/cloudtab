@@ -304,6 +304,23 @@ bash scripts/check.sh
 ln -sf ../../scripts/check.sh .git/hooks/pre-commit
 ```
 
+## Building from source
+
+```bash
+# stripped dev binary for your local arch (Makefile uses -trimpath -ldflags "-s -w")
+make build-dev          # => ./cloudtab  (~74 MB; ~114 MB without the strip flags)
+
+# full CI-equivalent check (go vet + go test -race)
+make check
+```
+
+The dev binary is built with `-trimpath -ldflags "-s -w"`, which strips debug
+symbols and DWARF info and shrinks it from ~114 MB to ~74 MB. The GitHub
+Release artifacts are compressed further with UPX on Linux (~13–15 MB each per
+the release script); macOS binaries are **not** UPX-compressed because UPX
+does not support the Mach-O format. A plain `go build ./cmd/cloudtab` (no strip
+flags) yields the larger ~114 MB binary and should be avoided for distribution.
+
 ## Design in 60 seconds
 
 ```
