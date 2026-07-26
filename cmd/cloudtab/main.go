@@ -212,6 +212,22 @@ func main() {
 }
 
 func newEngine(region, site, awsSite, alibabaSite, huaweiSite string, noCache bool, cacheDir string, timeout time.Duration, maxRetries int, cacheTTL time.Duration) (*pricing.Engine, error) {
+	// Fail fast on a mistyped non-Tencent site selector. These sites have no
+	// "literal override" semantics, so an unknown value would silently default
+	// to the cn partition and only surface as an auth error much later.
+	if err := validateSiteFlag("--aws-site", awsSite); err != nil {
+		return nil, err
+	}
+	if err := validateSiteFlag("--alibaba-site", alibabaSite); err != nil {
+		return nil, err
+	}
+	if err := validateSiteFlag("--huawei-site", huaweiSite); err != nil {
+		return nil, err
+	}
+	// Normalize case so e.g. "INTL" behaves identically to "intl".
+	awsSite = strings.ToLower(strings.TrimSpace(awsSite))
+	alibabaSite = strings.ToLower(strings.TrimSpace(alibabaSite))
+	huaweiSite = strings.ToLower(strings.TrimSpace(huaweiSite))
 	return pricing.NewEngine(pricing.Config{
 		SecretID:    os.Getenv("TENCENTCLOUD_SECRET_ID"),
 		SecretKey:   os.Getenv("TENCENTCLOUD_SECRET_KEY"),
@@ -282,6 +298,33 @@ func resolveHuaweiSite(flagSite string) string {
 		return s
 	}
 	return strings.TrimSpace(os.Getenv("HUAWEI_SITE"))
+}
+
+// validSiteValues is the allowlist for the non-Tencent --*-site flags. Unlike
+// Tencent's --site (which maps an unknown value to a custom SDK root domain),
+// these three sites have no "literal override" semantics, so any value outside
+// this set is a typo that must fail fast instead of silently defaulting to the
+// cn partition and only failing later at auth time. The empty string means
+// "use the provider default".
+var validSiteValues = map[string]bool{
+	"":              true, // provider default
+	"domestic":      true,
+	"cn":            true,
+	"china":         true,
+	"intl":          true,
+	"international": true,
+	"global":        true,
+	"overseas":      true,
+}
+
+// validateSiteFlag fails fast on a mistyped non-Tencent site selector. It is
+// case-insensitive and tolerates surrounding whitespace so "INTL"/" Intl " are
+// accepted and normalized upstream.
+func validateSiteFlag(name, value string) error {
+	if validSiteValues[strings.ToLower(strings.TrimSpace(value))] {
+		return nil
+	}
+	return fmt.Errorf("invalid %s %q: want one of domestic|cn|china|intl|international|global|overseas (empty = provider default)", name, value)
 }
 
 // resolveConcurrency picks the parallel-lookup count with an explicit

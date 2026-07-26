@@ -481,6 +481,33 @@ included (this is a patch on top of v0.3.11).
   tests remain green.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.13" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.13 — fail fast on mistyped non-Tencent site flags
+
+A mistyped `--aws-site` / `--alibaba-site` / `--huawei-site` (e.g. `domesitc`)
+used to silently default to the cn partition and only fail much later at auth
+time. These three site flags now validate against an allowlist at flag-parse
+time and reject unknown values immediately with a clear error.
+
+### Site-flag validation
+- `--aws-site`, `--alibaba-site`, `--huawei-site` accept `domestic`, `cn`,
+  `china`, `intl`, `international`, `global`, `overseas` (case-insensitive,
+  surrounding whitespace tolerated, empty = provider default). Any other value
+  fails fast before any API call:
+  `invalid --aws-site "domesitc": want one of domestic|cn|china|intl|international|global|overseas (empty = provider default)`.
+- Valid values are normalized to lower case, so `INTL` behaves identically to
+  `intl`.
+- Tencent's `--site` is intentionally **not** restricted to this list — an
+  unrecognised value is still passed through verbatim as a custom SDK root
+  domain (private-cloud gateway support is preserved).
+
+### Tests
+- `cmd/cloudtab/main_test.go`: `TestValidateSiteFlag` asserts the allowlist
+  accepts the aliases (incl. cased/whitespace variants) and rejects genuine
+  typos.
+- All packages pass `go vet` and `go test -race`.
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

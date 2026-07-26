@@ -109,6 +109,15 @@ Huawei Cloud now correctly routes **Chinese-mainland** credentials to
 hard-coded, so a China-mainland account was misrouted). As with Tencent, prices
 are cached per provider + site, so the sites never cross-contaminate.
 
+The non-Tencent site flags (`--aws-site`, `--alibaba-site`, `--huawei-site`)
+accept `domestic`, `cn`, `china`, `intl`, `international`, `global`, or
+`overseas` (case-insensitive, empty = provider default). Any other value fails
+fast with a clear error before any API call, so a typo like `domesitc` is
+caught immediately instead of silently defaulting to the cn partition and
+failing later at auth time. Tencent's `--site` is **not** restricted to this
+list — an unrecognised value is passed through verbatim as a custom root domain
+(e.g. a private-cloud gateway).
+
 ### Performance & reliability flags
 
 Resources in a plan are priced **concurrently**, each request has a **timeout**,
