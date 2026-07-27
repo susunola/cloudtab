@@ -173,11 +173,11 @@ func TestCLIVersion(t *testing.T) {
 	}
 }
 
-// TestBreakdownStaticEIPPricedLocally is the centerpiece offline test: a
-// tencentcloud_eip is a StaticMapper priced locally (no API), so we get a REAL
-// priced resource through the full parse -> Estimate -> render pipeline with
-// zero credentials and zero network.
-func TestBreakdownStaticEIPPricedLocally(t *testing.T) {
+// TestBreakdownEIPSkippedWithoutCreds pins the no-credentials behavior for EIP:
+// tencentcloud_eip is priced via the vpc InquiryPriceAllocateAddresses API, so
+// without credentials the resource is skipped with a reason (never crashes,
+// exit 0).
+func TestBreakdownEIPSkippedWithoutCreds(t *testing.T) {
 	out, _, code := run(t, "breakdown",
 		"--path", fixture(t, "static_eip_plan.json"),
 		"--format", "json",
@@ -186,33 +186,23 @@ func TestBreakdownStaticEIPPricedLocally(t *testing.T) {
 		t.Fatalf("breakdown exit code = %d, want 0", code)
 	}
 	rep := mustJSONReport(t, out)
-	if len(rep.Resources) != 1 {
-		t.Fatalf("resources = %d, want 1 (EIP should be priced, not skipped)", len(rep.Resources))
+	if len(rep.Resources) != 0 {
+		t.Fatalf("resources = %d, want 0 (no creds -> EIP skipped)", len(rep.Resources))
 	}
-	if len(rep.Skipped) != 0 {
-		t.Fatalf("skipped = %d, want 0", len(rep.Skipped))
+	if len(rep.Skipped) != 1 {
+		t.Fatalf("skipped = %d, want 1", len(rep.Skipped))
 	}
-	r := rep.Resources[0]
-	if r.Address != "tencentcloud_eip.web" {
-		t.Errorf("address = %q, want tencentcloud_eip.web", r.Address)
+	s := rep.Skipped[0]
+	if s.Address != "tencentcloud_eip.web" {
+		t.Errorf("skipped address = %q, want tencentcloud_eip.web", s.Address)
 	}
-	if len(r.Components) != 1 {
-		t.Fatalf("components = %d, want 1", len(r.Components))
-	}
-	c := r.Components[0]
-	if c.MonthlyCost != 0 {
-		t.Errorf("monthly_cost = %v, want 0 (EIP has no InquiryPrice API)", c.MonthlyCost)
-	}
-	if c.Currency != "CNY" {
-		t.Errorf("currency = %q, want CNY", c.Currency)
-	}
-	if !strings.Contains(c.Name, "EIP") {
-		t.Errorf("component name missing EIP marker: %q", c.Name)
+	if s.Reason == "" {
+		t.Errorf("skipped reason is empty; a skip must always carry a reason")
 	}
 }
 
-// TestBreakdownTableRendersEIP checks the table renderer emits the real priced
-// resource's address (offline).
+// TestBreakdownTableRendersEIP checks the table renderer emits the EIP address
+// even when the resource is skipped (offline, no credentials).
 func TestBreakdownTableRendersEIP(t *testing.T) {
 	out, _, code := run(t, "breakdown",
 		"--path", fixture(t, "static_eip_plan.json"),
@@ -299,9 +289,10 @@ func TestDiffBadFormatRejects(t *testing.T) {
 	}
 }
 
-// TestDiffAcrossFixtures exercises the real diff computation end to end: before
-// = a skipped cloud CVM, after = a locally-priced EIP. The EIP must appear as
-// an addition and the CVM as a skipped resource in the diff output.
+// TestDiffAcrossFixtures exercises the real diff computation end to end:
+// before = a skipped cloud CVM, after = a skipped EIP. Without credentials both
+// resources are skipped; the diff's skipped list contains both addresses and no
+// resources are priced.
 func TestDiffAcrossFixtures(t *testing.T) {
 	out, _, code := run(t, "diff",
 		"--before", fixture(t, "example.plan.json"),
@@ -312,21 +303,18 @@ func TestDiffAcrossFixtures(t *testing.T) {
 		t.Fatalf("diff exit code = %d, want 0", code)
 	}
 	d := mustJSONDiff(t, out)
-	if len(d.Resources) != 1 {
-		t.Fatalf("diff resources = %d, want 1 (the added EIP)", len(d.Resources))
+	if len(d.Resources) != 0 {
+		t.Fatalf("diff resources = %d, want 0 (no creds -> all skipped)", len(d.Resources))
 	}
-	r := d.Resources[0]
-	if r.Address != "tencentcloud_eip.web" {
-		t.Errorf("diff resource address = %q, want tencentcloud_eip.web", r.Address)
+	if len(d.Skipped) != 2 {
+		t.Fatalf("diff skipped = %d, want 2 (CVM + EIP)", len(d.Skipped))
 	}
-	if r.Kind != "+" {
-		t.Errorf("diff kind = %q, want + (added)", r.Kind)
+	// Skipped is sorted by address: tencentcloud_eip.web < tencentcloud_instance.web
+	if d.Skipped[0].Address != "tencentcloud_eip.web" {
+		t.Errorf("diff skipped[0] address = %q, want tencentcloud_eip.web", d.Skipped[0].Address)
 	}
-	if r.AfterMonthly != 0 {
-		t.Errorf("after_monthly = %v, want 0 (EIP local price)", r.AfterMonthly)
-	}
-	if len(d.Skipped) != 1 || d.Skipped[0].Address != "tencentcloud_instance.web" {
-		t.Errorf("diff skipped = %+v, want exactly the skipped CVM", d.Skipped)
+	if d.Skipped[1].Address != "tencentcloud_instance.web" {
+		t.Errorf("diff skipped[1] address = %q, want tencentcloud_instance.web", d.Skipped[1].Address)
 	}
 }
 

@@ -542,8 +542,8 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 		}, nil
 	}
 
-	// Static mappers bypass the pricing engine entirely (e.g. EIP, which has no
-	// Tencent InquiryPrice API).
+	// Static mappers bypass the pricing engine entirely (e.g. COS/CDN/CFS/SCF,
+	// whose cost is usage-driven and not derivable from a Terraform plan).
 	if sm, ok := mapper.(resources.StaticMapper); ok {
 		comps, err := sm.Estimate(r)
 		if err != nil {

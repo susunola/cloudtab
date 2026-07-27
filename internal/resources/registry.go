@@ -87,7 +87,7 @@ func DefaultRegistry() *Registry {
 		// Usage-driven Tencent resources with no InquiryPrice* API (cost depends
 		// on actual GB stored / requests / invocations, none of which is in the
 		// plan). Registered as StaticMappers returning a zero-cost placeholder +
-		// note, mirroring EIP — never call the pricing engine, never fabricate.
+		// note — never call the pricing engine, never fabricate.
 		r.Register("tencentcloud_cos_bucket", &COSBucket{})
 		r.Register("tencentcloud_cdn_domain", &CDNDomain{})
 		r.Register("tencentcloud_cfs_file_system", &CFSFileSystem{})
