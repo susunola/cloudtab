@@ -88,6 +88,16 @@ func TestAlibabaEIPParse(t *testing.T) {
 	}
 }
 
+// TestAlibabaEIPParseNoDataErrors guards the fallback path: when the response
+// itemizes no modules AND carries no positive cost, the ModuleCode-less
+// fallback must propagate parseAlibabaPrice's error rather than emit a
+// fabricated zero-cost, empty-currency component.
+func TestAlibabaEIPParseNoDataErrors(t *testing.T) {
+	if _, err := (AlibabaEIP{}).Parse(pricing.PriceRequest{}, []byte(`{}`)); err == nil {
+		t.Fatal("Parse({}) = nil error, want error (empty EIP response must not fabricate a zero-cost line)")
+	}
+}
+
 func TestAlibabaSLBParse(t *testing.T) {
 	raw := []byte(alibabaMockJSON)
 	comps, err := AlibabaSLB{}.Parse(pricing.PriceRequest{}, raw)

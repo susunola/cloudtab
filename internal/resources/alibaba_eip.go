@@ -87,9 +87,15 @@ func (AlibabaEIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 		})
 	}
 	if len(comps) == 0 {
-		// Fallback for responses that do not include ModuleCode: report a single
-		// daily component so callers still see a total.
-		info, _ := parseAlibabaPrice(raw, req.ExpectedCurrency)
+		// Fallback for responses that do not itemize modules by ModuleCode:
+		// report a single daily component so callers still see a total. The
+		// error is honoured (not discarded) so a zero-price or business-level
+		// failure surfaces as a skipped resource instead of a fabricated
+		// zero-cost, empty-currency line — matching parseAlibabaPrice's guard.
+		info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
+		if err != nil {
+			return nil, err
+		}
 		comps = append(comps, output.CostComponent{
 			Name:        "Alibaba EIP",
 			Unit:        "DAY",
