@@ -49,7 +49,14 @@ func (MariaDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 	if payMode == "" {
 		payMode = strings.ToLower(strings.TrimSpace(getStr(r.After, "charge_type")))
 	}
-	// mariadb Paymode expects "prepaid" | "postpaid".
+	// mariadb Paymode expects "prepaid" | "postpaid". When the TF resource
+	// doesn't expose a charge_type field, infer from period: a configured
+	// period/prepaid_period means prepaid; absence means postpaid.
+	if payMode == "" {
+		if getInt(r.After, "prepaid_period") > 0 || getInt(r.After, "period") > 0 {
+			payMode = "prepaid"
+		}
+	}
 	switch {
 	case strings.Contains(payMode, "postpaid"), payMode == "":
 		payMode = "postpaid"

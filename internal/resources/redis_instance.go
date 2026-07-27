@@ -119,6 +119,12 @@ func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 		currency = "CNY"
 	}
 
+	if amountUnit == "" {
+		// The Redis InquiryPriceCreateInstance API returns Price in 分
+		// (0.01 元) by default, but does not include AmountUnit in the response.
+		// Default to "pent" so normalizeTencentAmount divides by 100.
+		amountUnit = "pent"
+	}
 	priceYuan := normalizeTencentAmount(price, amountUnit)
 	billingMode := fmt.Sprintf("%v", req.Params["BillingMode"])
 	monthly := priceYuan

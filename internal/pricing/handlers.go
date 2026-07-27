@@ -12,6 +12,7 @@ package pricing
 
 import (
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	tcHttp "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/http"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 
 	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
@@ -169,6 +170,18 @@ var handlers = map[string]productHandler{
 				}
 				out, err := client.(*vpc.Client).InquiryPriceCreateVpnGateway(in)
 				return sdkResult(out, err)
+			},
+			// EIP pricing: SDK has AllocateAddresses but no InquiryPriceAllocateAddresses.
+			"InquiryPriceAllocateAddresses": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquiryPriceAllocateAddresses")
+				if err := req.SetActionParameters(params); err != nil {
+					return nil, err
+				}
+				resp := tcHttp.NewCommonResponse()
+				if err := client.(*vpc.Client).Send(req, resp); err != nil {
+					return nil, err
+				}
+				return resp.GetBody(), nil
 			},
 		},
 	},

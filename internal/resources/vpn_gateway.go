@@ -13,13 +13,27 @@ import (
 // VPNGateway handles `tencentcloud_vpn_gateway`.
 //
 // Pricing API (vpc): InquiryPriceCreateVpnGateway.
-// Docs: https://cloud.tencent.com/document/api/215/17517
+// Docs: https://cloud.tencent.com/document/product/215/17512
+//
+// The API supports both PREPAID (包年包月) and POSTPAID_BY_HOUR (按量计费).
+// cloudtab reports a monthly run-rate, so PREPAID is always priced for a
+// single month (Period=1).
+//
+// Response.Price has two dimensions, each an ItemPrice:
+//   - InstancePrice: VPN gateway instance fee
+//   - POSTPAID_BY_HOUR: ChargeUnit="HOUR", UnitPrice/DiscountPrice = 元/hour
+//   - PREPAID:          ChargeUnit="" (empty, not "none" as docs suggest),
+//     DiscountPrice = period total 元 (Period=1 → monthly)
+//   - BandwidthPrice: public network fee
+//   - POSTPAID_BY_HOUR: ChargeUnit="GB", UnitPrice/DiscountPrice = 元/GB (by traffic)
+//   - PREPAID:          ChargeUnit="", all zero (included in instance)
+//
+// For "GB" (per-traffic) billing we cannot estimate a monthly cost without
+// traffic volume, so only the rate is shown.
 //
 // Terraform provider fields commonly seen:
 //   - bandwidth (Mbps), charge_type (PREPAID | POSTPAID_BY_HOUR),
 //     prepaid_period, type (IPSEC | SSL), max_connection (SSL only)
-//
-// Response.Price.InstancePrice.{UnitPrice,DiscountPrice,ChargeUnit} is in CNY.
 type VPNGateway struct{}
 
 func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
@@ -71,67 +85,104 @@ func (VPNGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
+// vpnItemPrice mirrors the vpc ItemPrice data structure
+// (https://cloud.tencent.com/document/api/215/15824#ItemPrice).
+type vpnItemPrice struct {
+	UnitPrice         float64 `json:"UnitPrice"`
+	UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+	OriginalPrice     float64 `json:"OriginalPrice"`
+	DiscountPrice     float64 `json:"DiscountPrice"`
+	ChargeUnit        string  `json:"ChargeUnit"`
+}
+
+// vpnPriceBlock is the nested Price structure returned by
+// InquiryPriceCreateVpnGateway, carrying instance and bandwidth dimensions.
+type vpnPriceBlock struct {
+	InstancePrice  vpnItemPrice `json:"InstancePrice"`
+	BandwidthPrice vpnItemPrice `json:"BandwidthPrice"`
+}
+
 func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	// itemPrice mirrors vpc ItemPrice (CNY). UnitPriceDiscount is CNY/hour for POSTPAID.
-	type itemPrice struct {
-		UnitPrice         float64 `json:"UnitPrice"`
-		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-		OriginalPrice     float64 `json:"OriginalPrice"`
-		DiscountPrice     float64 `json:"DiscountPrice"`
-		ChargeUnit        string  `json:"ChargeUnit"`
-	}
-	type priceBlock struct {
-		InstancePrice  itemPrice `json:"InstancePrice"`
-		BandwidthPrice itemPrice `json:"BandwidthPrice"`
-	}
 	var wrap struct {
-		Price    priceBlock `json:"Price"`
+		Price    vpnPriceBlock `json:"Price"`
 		Response struct {
-			Price priceBlock `json:"Price"`
+			Price vpnPriceBlock `json:"Price"`
 		} `json:"Response"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, err
 	}
 
-	price := wrap.Price
 	// The Tencent SDK nests the real payload under "Response"; prefer it when present.
+	price := wrap.Price
 	if wrap.Response.Price.InstancePrice.UnitPrice > 0 ||
 		wrap.Response.Price.InstancePrice.DiscountPrice > 0 ||
 		wrap.Response.Price.BandwidthPrice.UnitPrice > 0 {
 		price = wrap.Response.Price
 	}
 
-	comps := make([]output.CostComponent, 0, 2)
+	const currency = "CNY"
+	var comps []output.CostComponent
 
-	ip := price.InstancePrice
-	unitPrice := ip.UnitPriceDiscount
-	if unitPrice == 0 {
-		unitPrice = ip.UnitPrice
+	// Instance fee (always present).
+	comps = append(comps, vpnComponent(
+		fmt.Sprintf("VPN gateway (%v Mbps)", req.Params["InternetMaxBandwidthOut"]),
+		price.InstancePrice, currency))
+	// Bandwidth / traffic fee (may be 0 for PREPAID where bandwidth is included).
+	if bw := price.BandwidthPrice; bw.UnitPrice > 0 || bw.DiscountPrice > 0 || bw.OriginalPrice > 0 {
+		comps = append(comps, vpnComponent("VPN public bandwidth", bw, currency))
 	}
-	monthly, hourly := monthlyFromPrice(ip.ChargeUnit, unitPrice, ip.DiscountPrice)
-	comps = append(comps, output.CostComponent{
-		Name:        fmt.Sprintf("VPN gateway (%v Mbps)", req.Params["InternetMaxBandwidthOut"]),
-		Unit:        ip.ChargeUnit,
+	return comps, nil
+}
+
+// vpnComponent builds a CostComponent from a VPN ItemPrice. Per the official
+// ItemPrice ChargeUnit semantics:
+//   - "HOUR" (POSTPAID instance): DiscountPrice is the discounted 元/hour rate
+//     (UnitPrice is the undiscounted rate; UnitPriceDiscount is not returned
+//     by this API). Fall back to UnitPrice when DiscountPrice is 0.
+//   - "GB"   (POSTPAID bandwidth): 元/GB, traffic-based — cannot estimate a
+//     monthly cost without traffic volume, so only the rate is shown.
+//   - "" (PREPAID, empty): DiscountPrice is the period (Period=1 → monthly) total;
+//     UnitPrice is 0, so monthlyFromPrice's default branch returns discountPrice.
+func vpnComponent(name string, p vpnItemPrice, currency string) output.CostComponent {
+	unit := strings.ToUpper(strings.TrimSpace(p.ChargeUnit))
+	if unit == "GB" {
+		// Per-traffic billing: UnitPrice/DiscountPrice is 元/GB.
+		rate := p.DiscountPrice
+		if rate == 0 {
+			rate = p.UnitPrice
+		}
+		return output.CostComponent{
+			Name:        fmt.Sprintf("%s (%.4f 元/GB)", name, rate),
+			Unit:        "GB",
+			HourlyCost:  0,
+			MonthlyCost: 0,
+			Currency:    currency,
+		}
+	}
+	if unit == "HOUR" {
+		// POSTPAID hourly: DiscountPrice is the discounted 元/hour rate
+		// (preferred over UnitPrice, the undiscounted rate).
+		hourly := p.DiscountPrice
+		if hourly == 0 {
+			hourly = preferDiscount(p.UnitPriceDiscount, p.UnitPrice)
+		}
+		return output.CostComponent{
+			Name:        name,
+			Unit:        p.ChargeUnit,
+			HourlyCost:  hourly,
+			MonthlyCost: hourly * hoursPerMonth,
+			Currency:    currency,
+		}
+	}
+	// PREPAID ("", "none", "month"): DiscountPrice is the period (Period=1 →
+	// monthly) total; UnitPrice is 0. monthlyFromPrice returns it as-is.
+	monthly, hourly := monthlyFromPrice(p.ChargeUnit, 0, p.DiscountPrice)
+	return output.CostComponent{
+		Name:        name,
+		Unit:        p.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
-	})
-
-	if bw := price.BandwidthPrice; bw.UnitPrice > 0 || bw.DiscountPrice > 0 {
-		bwUnitPrice := bw.UnitPriceDiscount
-		if bwUnitPrice == 0 {
-			bwUnitPrice = bw.UnitPrice
-		}
-		bwMonthly, bwHourly := monthlyFromPrice(bw.ChargeUnit, bwUnitPrice, bw.DiscountPrice)
-		comps = append(comps, output.CostComponent{
-			Name:        "VPN public bandwidth",
-			Unit:        bw.ChargeUnit,
-			HourlyCost:  bwHourly,
-			MonthlyCost: bwMonthly,
-			Currency:    "CNY",
-		})
+		Currency:    currency,
 	}
-
-	return comps, nil
 }

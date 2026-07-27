@@ -14,7 +14,12 @@ import (
 //
 // Pricing API (mongodb): InquirePriceCreateDBInstances (SDK spells it
 // "InquirePrice", without the 'y').
-// Docs: https://cloud.tencent.com/document/api/240/38571
+// Docs: https://cloud.tencent.com/document/product/240/43666
+// Price data structure: https://cloud.tencent.com/document/api/240/38576#DBInstancePrice
+//
+// The API supports both PREPAID (包年包月) and POSTPAID_BY_HOUR (按量计费).
+// cloudtab reports a monthly run-rate, so PREPAID is always priced for a
+// single month (Period=1).
 //
 // Terraform provider fields commonly seen:
 //   - available_zone, memory (GB), volume (GB), engine_version,
@@ -75,10 +80,24 @@ func (MongoDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 	}
 	if v := getStr(r.After, "engine_version"); v != "" {
 		params["MongoVersion"] = v
+	} else {
+		// MongoVersion is required by the API. Default to 4.0 (WiredTiger),
+		// the minimum still widely sellable version.
+		params["MongoVersion"] = "MONGO_40_WT"
 	}
-	if m := getStr(r.After, "machine_type"); m != "" {
-		params["MachineCode"] = m
+
+	// MachineCode: the API only accepts GE.LD.T1 (本地盘通用I型),
+	// GE.CD.T1 (云盘通用I型), HIO10G (高IO万兆型), or HCD (云盘版).
+	// The TF provider still allows the legacy "HIO"; normalize it to HIO10G
+	// so InquirePrice does not reject it as an invalid machine type.
+	machine := strings.ToUpper(strings.TrimSpace(getStr(r.After, "machine_type")))
+	switch machine {
+	case "":
+		machine = "GE.LD.T1" // recommended default spec
+	case "HIO":
+		machine = "HIO10G" // legacy alias → current code
 	}
+	params["MachineCode"] = machine
 	// The Terraform provider uses separate resource types for replica-set vs
 	// sharding clusters and does NOT expose a "cluster_type" attribute.
 	//   - tencentcloud_mongodb_instance            → REPLSET
@@ -133,8 +152,10 @@ func (MongoDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 	chargeType := strings.ToUpper(fmt.Sprintf("%v", req.Params["InstanceChargeType"]))
 	monthly := priceYuan
 	hourly := 0.0
-	// UnitPrice is the hourly rate for POSTPAID; use it when billing hourly.
-	if strings.Contains(chargeType, "HOUR") || chargeType == "POSTPAID" {
+	// UnitPrice is the hourly rate for POSTPAID_BY_HOUR; use it to compute
+	// the monthly figure. PREPAID's DiscountPrice is already a monthly total
+	// (cloudtab forces Period=1).
+	if strings.Contains(chargeType, "HOUR") {
 		hourly = p.UnitPrice
 		if hourly == 0 {
 			hourly = priceYuan
