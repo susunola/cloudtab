@@ -642,6 +642,25 @@ harness, and its DESIGN.md. The tracked tree is now Chinese-free.
   `TestDirectConnectGatewayExtract/Parse`; `TestStatsCountsBackendCallsAndRetries`.
 - All **60** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.17" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.17 — close an anti-fabrication follow-on hole (Alibaba EIP)
+
+v0.3.16 made `parseAlibabaPrice` error on a response with no positive cost, so
+a paid resource can never be reported as a fabricated zero. But the Alibaba EIP
+mapper has a second, ModuleCode-less fallback path that still called the helper
+as `info, _`, discarding that error and emitting a zero-cost, empty-currency
+`DAY` component — re-opening the exact hole the guard closed.
+
+### Fix
+`AlibabaEIP.Parse`'s fallback now propagates the error instead of discarding it,
+so an empty or business-level-failed EIP response is skipped with a note (or
+fails the run under `--fail-on-error`) rather than fabricating a free line.
+
+### Tests
+- `TestAlibabaEIPParseNoDataErrors` asserts `Parse({})` returns an error.
+- All **60** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
