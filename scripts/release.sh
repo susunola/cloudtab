@@ -602,6 +602,46 @@ diagnostic mode, and matching regression tests so each bug class stays fixed.
 - All **60** mappers (Tencent 24 / AWS 18 / Alibaba 9 / Huawei 9) pass `go vet`
   and `go test -race` (6/6 packages, incl. the new `internal/logger`).
 EOF
+elif [[ "$VERSION" == "v0.3.16" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.16 — anti-fabrication guard, run summary, English-only sweep
+
+Follow-ups from a third review pass: a symmetric anti-fabrication guard, a
+per-mapper test for the newest resource, an always-on run summary, and a full
+English-only cleanup of contributor-added Chinese text.
+
+### Anti-fabrication — no fabricated zero
+Symmetric to the AWS truncation guard (v0.3.14): `parseAlibabaPrice` and
+`parseHuaweiPrice` now **error** when a BSS response carries no positive cost
+(empty ModuleDetails / amount, or a business-level failure returned with HTTP
+200) instead of emitting a confident zero-cost component that would report a
+paid resource as free. The engine surfaces it as a skipped resource with a note.
+
+### dc_gateway coverage
+`tencentcloud_dc_gateway` (added by an earlier PR with only the e2e harness) now
+has a unit test: Extract targets the correct `vpc` action; Parse covers the
+nested/top-level response shapes and the discount fallback, asserting a single
+PREPAID monthly CNY component.
+
+### Run summary (no `--debug` needed)
+The engine now keeps atomic run counters (cache hits/misses, backend calls,
+total backend time) exposed via `Engine.Stats()`. After every `breakdown` /
+`diff`, cloudtab prints a one-line summary to **stderr** — e.g.
+`cloudtab: 12 resources priced, 1 skipped | backend calls: 8 (1.4s), cache
+hits: 4, misses: 8` — while the report on stdout stays untouched.
+
+### English-only sweep
+Earlier contributor PRs left Chinese in tracked files — including two component
+Names that rendered a CNY/GB rate with a Chinese currency glyph in actual report
+output. All of it is translated to English: the shipped mapper package
+(clb/eip/vpn/mongodb/postgresql/redis/sqlserver/dc_gateway), the e2etest
+harness, and its DESIGN.md. The tracked tree is now Chinese-free.
+
+### Tests
+- `TestAlibabaParseNoData` / `TestHuaweiParseNoData` now assert the guard errors;
+  `TestDirectConnectGatewayExtract/Parse`; `TestStatsCountsBackendCallsAndRetries`.
+- All **60** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

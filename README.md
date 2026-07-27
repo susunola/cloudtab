@@ -177,6 +177,11 @@ cloudtab breakdown --path plan.json --no-cache
 | `--cache-ttl <dur>` | Per-entry TTL (default `24h`); also swept on cache open. |
 | `breakdown --debug` / `diff --debug` | Emit diagnostics to **stderr** — cache hit/miss, per-call backend latency, and retry/backoff events (report stays on stdout). |
 
+After every run cloudtab prints a one-line summary to **stderr** (independent of
+`--debug`), e.g. `cloudtab: 12 resources priced, 1 skipped | backend calls: 8
+(1.4s), cache hits: 4, misses: 8` — the report on stdout is never touched, so
+piping/redirecting stdout stays clean.
+
 Sample output:
 
 ```
