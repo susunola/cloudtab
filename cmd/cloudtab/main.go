@@ -203,6 +203,24 @@ func main() {
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
+	// -- cache --
+	var cacheClearDir string
+	cacheCmd := &cobra.Command{
+		Use:   "cache",
+		Short: "Manage the on-disk price cache",
+	}
+	cacheClear := &cobra.Command{
+		Use:   "clear",
+		Short: "Delete the price cache file (frees disk; the next run repopulates it)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return clearCache(cachePathForFlags(false, cacheClearDir))
+		},
+	}
+	cacheClear.Flags().StringVar(&cacheClearDir, "cache-dir", "", "Directory for price cache (default $HOME/.cloudtab)")
+	cacheCmd.AddCommand(cacheClear)
+	root.AddCommand(cacheCmd)
+
 	root.AddCommand(breakdown, diff)
 
 	if err := root.Execute(); err != nil {
@@ -360,6 +378,27 @@ func cachePathForFlags(noCache bool, cacheDir string) string {
 		}
 	}
 	return filepath.Join(cacheDir, "cache.db")
+}
+
+// clearCache deletes the price cache file. A missing file is not an error — it
+// simply means there is nothing to clear. This is the user-facing `cloudtab
+// cache clear` action; it frees disk and the next run repopulates the cache.
+func clearCache(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty cache path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Printf("cache clear: nothing to clear (%s does not exist)\n", path)
+			return nil
+		}
+		return fmt.Errorf("stat cache %s: %w", path, err)
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove cache %s: %w", path, err)
+	}
+	fmt.Printf("cache cleared: %s\n", path)
+	return nil
 }
 
 // priceReport is the shared pipeline: parse plan -> dispatch to mappers -> collect cost.

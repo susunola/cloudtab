@@ -3,6 +3,8 @@ package pricing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -77,6 +79,28 @@ func TestAWSBackendQueryBuildsServiceCodeAndFilters(t *testing.T) {
 	}
 }
 
+// TestBuildGetProductsInput verifies the pure request-builder assembles the
+// ServiceCode, FormatVersion and MaxResults fields correctly — independent of
+// any network client.
+func TestBuildGetProductsInput(t *testing.T) {
+	filters := []pricingtypes.Filter{
+		{Type: pricingtypes.FilterTypeTermMatch, Field: aws.String("ServiceCode"), Value: aws.String("AmazonEC2")},
+	}
+	in := buildGetProductsInput("AmazonEC2", filters, 7)
+	if in.ServiceCode == nil || *in.ServiceCode != "AmazonEC2" {
+		t.Errorf("ServiceCode = %v, want AmazonEC2", in.ServiceCode)
+	}
+	if in.FormatVersion == nil || *in.FormatVersion != "aws_v1" {
+		t.Errorf("FormatVersion = %v, want aws_v1", in.FormatVersion)
+	}
+	if in.MaxResults == nil || *in.MaxResults != 7 {
+		t.Errorf("MaxResults = %v, want 7", in.MaxResults)
+	}
+	if len(in.Filters) != 1 {
+		t.Errorf("Filters len = %d, want 1", len(in.Filters))
+	}
+}
+
 func assertFilter(t *testing.T, f pricingtypes.Filter, field, value string) {
 	t.Helper()
 	if f.Type != pricingtypes.FilterTypeTermMatch {
@@ -91,11 +115,10 @@ func assertFilter(t *testing.T, f pricingtypes.Filter, field, value string) {
 }
 
 // TestAWSBackendPaginationRespectsMaxResults verifies pagination stops once the
-// MaxResults cap is reached without following further NextTokens.
+// MaxResults cap is reached on a final page (no NextToken) without erroring.
 func TestAWSBackendPaginationRespectsMaxResults(t *testing.T) {
 	fake := &fakePricing{pages: []*pricing.GetProductsOutput{
-		{PriceList: []string{`{"sku":"A"}`, `{"sku":"B"}`}, NextToken: strp("more")},
-		{PriceList: []string{`{"sku":"C"}`}},
+		{PriceList: []string{`{"sku":"A"}`, `{"sku":"B"}`}},
 	}}
 	b := &awsBackend{client: fake}
 
@@ -115,6 +138,46 @@ func TestAWSBackendPaginationRespectsMaxResults(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("GetProducts called %d times, want 1 (cap reached on first page)", fake.calls)
+	}
+}
+
+// TestAWSBackendQueryTruncatedErrors verifies that when the MaxResults cap is
+// reached while a NextToken still exists, the backend returns a clear error
+// instead of silently returning a (possibly wrong) first SKU. This guards the
+// "matched >100 products" truncation bug.
+func TestAWSBackendQueryTruncatedErrors(t *testing.T) {
+	fake := &fakePricing{pages: []*pricing.GetProductsOutput{
+		{PriceList: []string{`{"sku":"A"}`, `{"sku":"B"}`}, NextToken: strp("more")},
+		{PriceList: []string{`{"sku":"C"}`}},
+	}}
+	b := &awsBackend{client: fake}
+
+	req := PriceRequest{
+		Provider: "aws",
+		Product:  "AmazonEC2",
+		Params:   map[string]interface{}{"MaxResults": 2},
+	}
+	if _, err := b.query(req); err == nil {
+		t.Fatal("expected truncation error when cap reached with NextToken, got nil")
+	} else if !strings.Contains(err.Error(), "more than 2 products") {
+		t.Fatalf("error = %v, want it to mention the MaxResults truncation", err)
+	}
+}
+
+// TestAWSBackendQueryTruncatedDefaultMaxResults confirms the default cap (100)
+// also errors when a NextToken remains after 100 collected products.
+func TestAWSBackendQueryTruncatedDefaultMaxResults(t *testing.T) {
+	pages := make([]*pricing.GetProductsOutput, 0, 2)
+	first := &pricing.GetProductsOutput{NextToken: strp("p2")}
+	for i := 0; i < 100; i++ {
+		first.PriceList = append(first.PriceList, fmt.Sprintf(`{"sku":"%d"}`, i))
+	}
+	pages = append(pages, first, &pricing.GetProductsOutput{PriceList: []string{`{"sku":"100"}`}})
+	fake := &fakePricing{pages: pages}
+	b := &awsBackend{client: fake}
+
+	if _, err := b.query(PriceRequest{Provider: "aws", Product: "AmazonEC2"}); err == nil {
+		t.Fatal("expected truncation error at default cap with NextToken, got nil")
 	}
 }
 

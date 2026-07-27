@@ -3,6 +3,7 @@ package pricing
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -51,7 +52,51 @@ func openCache(path string, ttl time.Duration) (*cache, error) {
 	if ttl <= 0 {
 		ttl = defaultTTL
 	}
-	return &cache{db: db, ttl: ttl}, nil
+	c := &cache{db: db, ttl: ttl}
+	// Best-effort startup sweep so unique SKUs from one-off plans do not grow
+	// the cache file without bound. This is the only place expired-but-never-
+	// re-read entries get reclaimed (Get only evicts on access). Failures are
+	// non-fatal: the engine still works, just without a clean sweep.
+	if err := c.SweepExpired(); err != nil {
+		fmt.Fprintf(os.Stderr, "cloudtab: warning: price cache sweep failed (%v); continuing\n", err)
+	}
+	return c, nil
+}
+
+// SweepExpired deletes every expired (or malformed) entry from the cache bucket.
+// It is safe to call at any time; the engine invokes it once on open as a
+// startup cleanup. Unique SKUs fetched by a one-off plan would otherwise sit in
+// the file forever (Get only evicts an entry when it is read again), so this
+// keeps the on-disk cache from growing unbounded.
+func (c *cache) SweepExpired() error {
+	if c == nil || c.db == nil {
+		return nil
+	}
+	now := time.Now().Unix()
+	return c.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(cacheBucket))
+		if b == nil {
+			return nil
+		}
+		var toDelete [][]byte
+		_ = b.ForEach(func(k, v []byte) error {
+			if len(v) < 8 {
+				toDelete = append(toDelete, k) // malformed -> drop
+				return nil
+			}
+			expiry := int64(binary.BigEndian.Uint64(v[:8]))
+			if now > expiry {
+				toDelete = append(toDelete, k)
+			}
+			return nil
+		})
+		for _, k := range toDelete {
+			if err := b.Delete(k); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Get returns the cached payload if present and not expired. Expired entries

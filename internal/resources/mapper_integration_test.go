@@ -1148,7 +1148,9 @@ var expectedAllTypes = []string{
 	"huaweicloud_nat_gateway",
 	"huaweicloud_rds_instance",
 	"huaweicloud_vpc_eip",
-	// Tencent Cloud (19 — note: cwp_license_order == tencentcloud_cwp_license_order)
+	// Tencent Cloud (23 — note: cwp_license_order == tencentcloud_cwp_license_order;
+	// the 4 static usage-driven resources below have no InquiryPrice* API and are
+	// registered as StaticMappers returning a zero-cost placeholder + note)
 	"tencentcloud_cbs_storage",
 	"tencentcloud_clb_instance",
 	"tencentcloud_cloudhsm_instance",
@@ -1168,6 +1170,10 @@ var expectedAllTypes = []string{
 	"tencentcloud_redis_instance",
 	"tencentcloud_sqlserver_instance",
 	"tencentcloud_vpn_gateway",
+	"tencentcloud_cos_bucket",
+	"tencentcloud_cdn_domain",
+	"tencentcloud_cfs_file_system",
+	"tencentcloud_scf_function",
 }
 
 func TestDefaultRegistryHasAllTypes(t *testing.T) {

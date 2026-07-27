@@ -77,10 +77,28 @@ func newAlibabaBackend(cfg Config) (backend, error) {
 // SubscriptionType. The backend builds the typed SDK request, executes it,
 // and returns the raw response JSON for the mapper's Parse() to decode.
 func (b *alibabaBackend) query(req PriceRequest) ([]byte, error) {
+	in, err := buildAlibabaRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	out, err := b.client.GetPayAsYouGoPrice(in)
+	if err != nil {
+		return nil, fmt.Errorf("alibaba GetPayAsYouGoPrice %s: %w", req.Product, err)
+	}
+	resp, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("alibaba: marshal response: %w", err)
+	}
+	return resp, nil
+}
+
+// buildAlibabaRequest converts a neutral PriceRequest into the typed BSS
+// GetPayAsYouGoPrice request. It is a pure function so the ModuleList mapping
+// can be unit-tested without a client.
+func buildAlibabaRequest(req PriceRequest) (*bssopenapi.GetPayAsYouGoPriceRequest, error) {
 	if req.Product == "" {
 		return nil, fmt.Errorf("alibaba: PriceRequest.Product (BSS ProductCode) is required")
 	}
-
 	in := bssopenapi.CreateGetPayAsYouGoPriceRequest()
 	in.ProductCode = req.Product
 	if req.Region != "" {
@@ -131,14 +149,5 @@ func (b *alibabaBackend) query(req PriceRequest) ([]byte, error) {
 			}
 		}
 	}
-
-	out, err := b.client.GetPayAsYouGoPrice(in)
-	if err != nil {
-		return nil, fmt.Errorf("alibaba GetPayAsYouGoPrice %s: %w", req.Product, err)
-	}
-	resp, err := json.Marshal(out)
-	if err != nil {
-		return nil, fmt.Errorf("alibaba: marshal response: %w", err)
-	}
-	return resp, nil
+	return in, nil
 }

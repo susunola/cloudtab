@@ -86,3 +86,62 @@ func TestNilCacheSafe(t *testing.T) {
 		t.Errorf("nil cache Close should be a no-op, got %v", err)
 	}
 }
+
+func TestCacheSweepExpired(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	c, err := openCache(path, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("openCache: %v", err)
+	}
+	defer c.Close()
+
+	if err := c.Put("live", []byte("v")); err != nil {
+		t.Fatalf("Put live: %v", err)
+	}
+	// Expired entry: write with a past TTL so its stored expiry is in the past.
+	c.ttl = -1 * time.Hour
+	if err := c.Put("expired", []byte("v")); err != nil {
+		t.Fatalf("Put expired: %v", err)
+	}
+	c.ttl = 24 * time.Hour // restore
+
+	if err := c.SweepExpired(); err != nil {
+		t.Fatalf("SweepExpired: %v", err)
+	}
+	if _, ok := c.Get("expired"); ok {
+		t.Error("expired entry should have been swept")
+	}
+	if _, ok := c.Get("live"); !ok {
+		t.Error("live entry should survive a sweep")
+	}
+}
+
+func TestCacheStartupSweep(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	c1, err := openCache(path, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("openCache: %v", err)
+	}
+	c1.ttl = -1 * time.Hour
+	if err := c1.Put("expired", []byte("v")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	c1.ttl = 24 * time.Hour // live entry must have a real (future) expiry
+	if err := c1.Put("live", []byte("v")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	c1.Close()
+
+	// Reopening runs SweepExpired on startup, so the expired entry is gone.
+	c2, err := openCache(path, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer c2.Close()
+	if _, ok := c2.Get("expired"); ok {
+		t.Error("expired entry should be swept on startup reopen")
+	}
+	if _, ok := c2.Get("live"); !ok {
+		t.Error("live entry should survive a startup sweep")
+	}
+}

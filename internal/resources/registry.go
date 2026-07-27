@@ -83,7 +83,14 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_cwp_license_order", &YunjingLicense{})
 		r.Register("tencentcloud_cloudhsm_instance", &CloudHSMInstance{})
 		r.Register("tencentcloud_domain_registration", &DomainRegistration{})
-		// TODO: tencentcloud_cos_bucket, tencentcloud_cdn_domain (static price table)
+		// Usage-driven Tencent resources with no InquiryPrice* API (cost depends
+		// on actual GB stored / requests / invocations, none of which is in the
+		// plan). Registered as StaticMappers returning a zero-cost placeholder +
+		// note, mirroring EIP — never call the pricing engine, never fabricate.
+		r.Register("tencentcloud_cos_bucket", &COSBucket{})
+		r.Register("tencentcloud_cdn_domain", &CDNDomain{})
+		r.Register("tencentcloud_cfs_file_system", &CFSFileSystem{})
+		r.Register("tencentcloud_scf_function", &SCFFunction{})
 
 		// --- Huawei Cloud (priced via BSS ListOnDemandResourceRatings) ---
 		r.Register("huaweicloud_compute_instance", &HuaweiECS{})

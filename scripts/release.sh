@@ -508,6 +508,56 @@ time and reject unknown values immediately with a clear error.
   typos.
 - All packages pass `go vet` and `go test -race`.
 EOF
+elif [[ "$VERSION" == "v0.3.14" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.14 — cache hygiene, AWS truncation guard, offline backend tests, COS/CDN/CFS/SCF placeholders
+
+The outcome of a broad improvement scan (4 P1 items): a correctness guard for AWS
+truncation, testable backend request builders, on-disk cache hygiene, and the first
+usage-driven Tencent placeholders.
+
+### AWS — fail fast on truncated results
+The AWS Price List `GetProducts` page is capped at `MaxResults` (default 100) and
+paginates via `NextToken`. Previously a result larger than one page was silently
+truncated and the first SKU priced — a silent mis-pricing hazard. `query()` now
+detects a remaining `NextToken` after hitting the cap and **fails fast** with a clear
+error telling you to narrow `Filters` (add `instanceType` / engine / region) so
+exactly one SKU is returned. New tests: `TestAWSBackendQueryTruncatedErrors`,
+`TestAWSBackendQueryTruncatedDefaultMaxResults`.
+
+### Backend request builders extracted for offline unit tests
+Request construction was inline inside `query()`, so it could only be exercised
+through the fake-API client tests. Each backend now has a pure builder:
+- AWS: `buildGetProductsInput(product, filters, maxResults)`
+- Alibaba: `buildAlibabaRequest(req)` — validates `ProductCode`, `SubscriptionType`,
+  and converts `ModuleList` for both `[]interface{}` and `[]map[string]string`.
+- Huawei: `buildHuaweiBody(req)` — marshal/unmarshal of `RateOnDemandReq`.
+
+Each has a direct unit test (`TestBuildGetProductsInput`, `TestBuildAlibabaRequest`,
+`TestBuildHuaweiBody`) plus missing-product / bad-param negative cases. The pricing
+package is now testable for request-shaping logic without a fake client.
+
+### Cache hygiene
+- `openCache` now **sweeps expired entries on startup** (best-effort) in addition to
+  the existing lazy eviction on access, so the bbolt file cannot grow unbounded.
+- New `cloudtab cache clear` command deletes the on-disk `cache.db` (a missing file
+  is a no-op, not an error). `breakdown --no-cache` / `--cache-ttl` give per-run
+  control. New tests: `TestCacheSweepExpired`, `TestCacheStartupSweep`,
+  `TestClearCache`.
+
+### Tencent — COS/CDN/CFS/SCF usage-note placeholders
+`tencentcloud_cos_bucket`, `tencentcloud_cdn_domain`, `tencentcloud_cfs_file_system`
+and `tencentcloud_scf_function` now register as **StaticMappers**: each returns a
+zero-cost `MONTH` component with a note that the real cost depends on usage (GB
+stored / requests / traffic / invocations) not present in the plan — never a
+fabricated price. The engine routes them via `Estimate` straight to the output,
+bypassing the pricing engine, exactly like `tencentcloud_eip`. New test:
+`TestStaticUsageMappersRegistered`.
+
+### Totals
+- All **59** mappers (Tencent 23 / AWS 18 / Alibaba 9 / Huawei 9) pass `go vet` and
+  `go test -race` (5/5 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

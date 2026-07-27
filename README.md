@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 55 resource types across four providers.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 59 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -152,6 +152,30 @@ Notes:
   reason) so one bad SKU cannot sink an entire large plan. Pass `--fail-on-error`
   to restore strict fail-fast behaviour.
 
+### Cache management
+
+Quotes are cached on disk (bbolt, single `cache.db` file under `$HOME/.cloudtab`)
+for 24h (override with `--cache-ttl`) so repeated runs over the same plan don't
+re-hit each cloud's API. The cache is namespaced per provider + site, and expired
+entries are swept both on open and lazily on access.
+
+```bash
+# delete the cache file to free disk (the next run repopulates it)
+cloudtab cache clear
+
+# point at a custom cache directory (matches --cache-dir on breakdown/diff)
+cloudtab cache clear --cache-dir /tmp/cloudtab-cache
+
+# skip the cache entirely for one run
+cloudtab breakdown --path plan.json --no-cache
+```
+
+| Command | What it does |
+|---|---|
+| `cloudtab cache clear` | Removes the on-disk `cache.db`; a missing file is a no-op, not an error. |
+| `breakdown --no-cache` / `diff --no-cache` | Bypass the cache for that run (useful after a cloud price change). |
+| `--cache-ttl <dur>` | Per-entry TTL (default `24h`); also swept on cache open. |
+
 Sample output:
 
 ```
@@ -190,6 +214,10 @@ Sample output:
 | CWP (Host Security) | `tencentcloud_cwp_license_order` | `yunjing:InquiryPriceOpenProVersionPrepaid` |
 | CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` (intl: unavailable — the API returns a placeholder price, not a real quote) |
 | Domain | `tencentcloud_domain_registration` | `domain:DescribeDomainPriceList` |
+| COS | `tencentcloud_cos_bucket` | No InquiryPrice API (static usage-note placeholder) |
+| CDN | `tencentcloud_cdn_domain` | No InquiryPrice API (static usage-note placeholder) |
+| CFS | `tencentcloud_cfs_file_system` | No InquiryPrice API (static usage-note placeholder) |
+| SCF | `tencentcloud_scf_function` | No InquiryPrice API (static usage-note placeholder) |
 
 ### AWS
 
@@ -219,6 +247,19 @@ through a `location` filter, so any commercial AWS region is supported.
 
 AWS prices are quoted in **USD**; a mixed-provider plan shows a per-component
 `Currency` column and only sums a grand total when the currency is uniform.
+
+The AWS Price List API caps each `GetProducts` page at `MaxResults` (default 100,
+clamped to `[1, 100]`) and paginates via `NextToken`. If a query matches **more**
+products than one page can hold, cloudtab **fails fast** with a clear error instead
+of silently pricing the wrong SKU from a truncated result set:
+
+```
+aws GetProducts AmazonEC2: query matched more than 100 products (NextToken still present); narrow your Filters (e.g. add instanceType / region) so exactly one SKU is returned
+```
+
+Narrow the `Filters` (pass a specific `instanceType` / engine / region) so the
+query returns a single SKU. This protects against silent mis-pricing, which the
+previous behaviour (returning the first truncated page) was vulnerable to.
 
 ### Alibaba Cloud
 
@@ -267,7 +308,14 @@ Huawei prices are quoted in **CNY**.
 > `PROVISIONED` mode (RCU/WCU are in the plan); `PAY_PER_REQUEST` tables are
 > skipped for the same reason.
 
-**Coming next**: COS, CDN, CFS, SCF (usage-driven + static price tables), more AWS services. See [issues](https://github.com/susunola/cloudtab/issues) or contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
+**Usage-driven Tencent resources (now recognized):** `tencentcloud_cos_bucket`,
+`tencentcloud_cdn_domain`, `tencentcloud_cfs_file_system` and
+`tencentcloud_scf_function` are reported as **zero-cost placeholders with a note**
+(like `aws_s3_bucket` / `aws_eip` / `aws_efs_file_system`) because their cost
+depends on usage not present in a Terraform plan, so any monthly number would be
+fabricated. Real static price tables for these are still on the roadmap. Next:
+more AWS services. See [issues](https://github.com/susunola/cloudtab/issues) or
+contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 > **Why not BM / ES / EMR?** These have no *create-instance* pricing API — Bare Metal (`bm`) and Elasticsearch (`es`) can only price an existing instance by ID, and EMR requires a deeply-nested multi-node cluster spec that a Terraform plan doesn't map cleanly. Pricing them from a plan would be guesswork, so they are intentionally out of scope.
 
@@ -347,7 +395,7 @@ Tencent Cloud (current):
 - [x] **M3** — `diff` command + markdown output
 - [x] **M4** — GitHub Action + sticky PR comment
 - [x] **M5** — TencentDB MySQL/Redis, `usage.yml` override wiring (`--usage-file`, `--before-usage-file`, `--after-usage-file`)
-- [ ] **M6** — Static price table for COS/CDN/SCF (no InquiryPrice API)
+- [x] **M6** — Static usage-note placeholders for COS/CDN/CFS/SCF (no InquiryPrice API; real static price tables still TODO)
 
 Multi-cloud (current):
 - [x] **M7** — Provider abstraction (`internal/pricing/engine.go` dispatch + lazy backends)

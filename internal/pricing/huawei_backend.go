@@ -188,16 +188,10 @@ func newHuaweiBackend(cfg Config) (backend, error) {
 // executes it (via the site-appropriate client, hidden behind huaweiBSSAPI),
 // and returns the raw response JSON.
 func (b *huaweiBackend) query(req PriceRequest) ([]byte, error) {
-	// Marshal params to JSON, then unmarshal into RateOnDemandReq.
-	bodyBytes, err := json.Marshal(req.Params)
+	body, err := buildHuaweiBody(req)
 	if err != nil {
-		return nil, fmt.Errorf("huawei: marshal params: %w", err)
+		return nil, err
 	}
-	var body model.RateOnDemandReq
-	if err := json.Unmarshal(bodyBytes, &body); err != nil {
-		return nil, fmt.Errorf("huawei: unmarshal params: %w", err)
-	}
-
 	// Inject the project id (UUID) that mappers must not set. It is the
 	// RateOnDemandReq.ProjectId, distinct from the per-product region. When
 	// unset we leave the (empty) value so the API bills under the credential's
@@ -206,7 +200,7 @@ func (b *huaweiBackend) query(req PriceRequest) ([]byte, error) {
 		body.ProjectId = b.projectID
 	}
 
-	in := &model.ListOnDemandResourceRatingsRequest{Body: &body}
+	in := &model.ListOnDemandResourceRatingsRequest{Body: body}
 	out, err := b.client.ListOnDemandResourceRatings(in)
 	if err != nil {
 		return nil, fmt.Errorf("huawei ListOnDemandResourceRatings %s: %w", req.Product, err)
@@ -216,4 +210,20 @@ func (b *huaweiBackend) query(req PriceRequest) ([]byte, error) {
 		return nil, fmt.Errorf("huawei: marshal response: %w", err)
 	}
 	return resp, nil
+}
+
+// buildHuaweiBody converts a neutral PriceRequest's Params into the typed
+// RateOnDemandReq. It is a pure function so the param->body mapping can be
+// unit-tested without a client. The project_id injection (backend state) is
+// left to query().
+func buildHuaweiBody(req PriceRequest) (*model.RateOnDemandReq, error) {
+	bodyBytes, err := json.Marshal(req.Params)
+	if err != nil {
+		return nil, fmt.Errorf("huawei: marshal params: %w", err)
+	}
+	var body model.RateOnDemandReq
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return nil, fmt.Errorf("huawei: unmarshal params: %w", err)
+	}
+	return &body, nil
 }

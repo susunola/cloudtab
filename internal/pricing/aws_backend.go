@@ -118,15 +118,11 @@ func (b *awsBackend) query(req PriceRequest) ([]byte, error) {
 		defer cancel()
 	}
 
-	in := &pricing.GetProductsInput{
-		ServiceCode:   aws.String(req.Product),
-		Filters:       filters,
-		FormatVersion: aws.String("aws_v1"),
-		MaxResults:    aws.Int32(int32(maxResults)),
-	}
+	in := buildGetProductsInput(req.Product, filters, maxResults)
 
 	collected := make([]json.RawMessage, 0, maxResults)
 	var token *string
+	truncated := false
 	for {
 		in.NextToken = token
 		out, err := b.client.GetProducts(ctx, in)
@@ -139,10 +135,23 @@ func (b *awsBackend) query(req PriceRequest) ([]byte, error) {
 				break
 			}
 		}
-		if len(collected) >= maxResults || out.NextToken == nil || *out.NextToken == "" {
+		if len(collected) >= maxResults {
+			// Hit the cap. If the API still has more pages, the result set is
+			// larger than MaxResults and the mapper's docs[0] pick would be
+			// arbitrary — surface that instead of silently returning a
+			// potentially wrong SKU.
+			if out.NextToken != nil && *out.NextToken != "" {
+				truncated = true
+			}
+			break
+		}
+		if out.NextToken == nil || *out.NextToken == "" {
 			break
 		}
 		token = out.NextToken
+	}
+	if truncated {
+		return nil, fmt.Errorf("aws GetProducts %s: query matched more than %d products (NextToken still present); narrow your Filters (e.g. add instanceType / region) so exactly one SKU is returned", req.Product, maxResults)
 	}
 
 	resp, err := json.Marshal(collected)
@@ -189,6 +198,18 @@ func buildAWSFilters(serviceCode string, params map[string]interface{}) ([]prici
 		})
 	}
 	return filters, nil
+}
+
+// buildGetProductsInput assembles the AWS Pricing GetProducts request from the
+// ServiceCode, the (already-built) TERM_MATCH filters, and the result cap. It is
+// a pure function so the request shape can be unit-tested without network access.
+func buildGetProductsInput(product string, filters []pricingtypes.Filter, maxResults int) *pricing.GetProductsInput {
+	return &pricing.GetProductsInput{
+		ServiceCode:   aws.String(product),
+		Filters:       filters,
+		FormatVersion: aws.String("aws_v1"),
+		MaxResults:    aws.Int32(int32(maxResults)),
+	}
 }
 
 // awsMaxResults reads an optional result cap from Params, defaulting to 100

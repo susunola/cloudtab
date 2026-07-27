@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestValidateSiteFlag(t *testing.T) {
 	// Accepted values (case-insensitive, surrounding whitespace tolerated).
@@ -23,5 +27,32 @@ func TestValidateSiteFlag(t *testing.T) {
 		if err := validateSiteFlag("--aws-site", v); err == nil {
 			t.Errorf("validateSiteFlag(%q) = nil, want error", v)
 		}
+	}
+}
+
+// TestClearCache verifies the `cache clear` action removes an existing cache
+// file and is a no-op (no error) when the file is absent.
+func TestClearCache(t *testing.T) {
+	// Missing file -> success, nothing to remove.
+	if err := clearCache(filepath.Join(t.TempDir(), "does-not-exist.db")); err != nil {
+		t.Fatalf("clearCache on missing file = %v, want nil", err)
+	}
+
+	// Existing file -> removed.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cache.db")
+	if err := os.WriteFile(p, []byte("bolt-data"), 0o600); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+	if err := clearCache(p); err != nil {
+		t.Fatalf("clearCache = %v, want nil", err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Errorf("cache file should be gone after clear (stat err = %v)", err)
+	}
+
+	// Empty path -> error.
+	if err := clearCache(""); err == nil {
+		t.Error("clearCache(\"\") = nil, want error")
 	}
 }

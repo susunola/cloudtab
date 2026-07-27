@@ -73,3 +73,28 @@ func TestHuaweiBackendNoProjectIDWhenUnset(t *testing.T) {
 		t.Errorf("ProjectId = %q, want empty when backend has no projectID", fake.lastReq.Body.ProjectId)
 	}
 }
+
+// TestBuildHuaweiBody verifies the pure param->body mapping without a client.
+func TestBuildHuaweiBody(t *testing.T) {
+	body, err := buildHuaweiBody(PriceRequest{Provider: "huawei", Product: "ecs", Params: representativeECSBody()})
+	if err != nil {
+		t.Fatalf("buildHuaweiBody error = %v", err)
+	}
+	if len(body.ProductInfos) != 1 {
+		t.Fatalf("ProductInfos = %d, want 1", len(body.ProductInfos))
+	}
+	if body.ProductInfos[0].UsageFactor != "Duration" {
+		t.Errorf("UsageFactor = %q, want Duration", body.ProductInfos[0].UsageFactor)
+	}
+	if body.ProductInfos[0].ResourceSpec != "s3.large.2" {
+		t.Errorf("ResourceSpec = %q, want s3.large.2", body.ProductInfos[0].ResourceSpec)
+	}
+}
+
+// TestBuildHuaweiBodyBadParams confirms a non-JSON-serialisable param errors.
+func TestBuildHuaweiBodyBadParams(t *testing.T) {
+	// A function value cannot be JSON-marshalled, so the builder must surface an error.
+	if _, err := buildHuaweiBody(PriceRequest{Params: map[string]interface{}{"fn": func() {}}}); err == nil {
+		t.Fatal("expected marshal error for non-serialisable params, got nil")
+	}
+}
