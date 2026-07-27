@@ -558,6 +558,50 @@ bypassing the pricing engine, exactly like `tencentcloud_eip`. New test:
 - All **59** mappers (Tencent 23 / AWS 18 / Alibaba 9 / Huawei 9) pass `go vet` and
   `go test -race` (5/5 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.15" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.15 — currency & region correctness, --debug observability
+
+The outcome of a second improvement scan: four correctness fixes, a `--debug`
+diagnostic mode, and matching regression tests so each bug class stays fixed.
+
+### Correctness
+- **Intl currency labelling (C1).** When an Alibaba/Huawei BSS price response
+  omits its currency field, the parsers used to default to CNY — but the
+  **international** sites quote USD, so a mislabelled component could be silently
+  summed into a CNY total, bypassing the mixed-currency guard. The expected
+  currency is now derived from the provider's configured site
+  (`Engine.ExpectedCurrencyFor`) and threaded into the parse step (on a copy, so
+  cache keys are untouched); the response's own currency still wins when present.
+- **Unknown AWS region now errors (C3).** `awsLocation` used to silently fall
+  back to us-east-1 for any unrecognised region — a confidently-wrong price with
+  no signal. An unknown non-empty region is now an error; an empty region still
+  defaults to us-east-1. All AWS mapper `Extract` callers thread the error out.
+- **EBS multi-dimension SKU pinning (C2).** `AWSEBSVolume.Parse` now pins the
+  storage line via `parseAWSPriceListMatching(raw, "EBS:VolumeUsage")`, so a
+  gp3/io2 volume is never priced off a per-IOPS or per-throughput dimension.
+- **Error wrapping (E1/E2).** Tencent SDK errors are wrapped with `%w` (was
+  `%s`) so callers can `errors.As` the original error (Code/Message/RequestId
+  preserved); the Huawei CN adapter no longer emits an empty product label.
+
+### Observability — `--debug`
+- New `internal/logger` (slog-backed, level-gated): WARN by default, DEBUG when
+  `--debug` is passed to `breakdown` or `diff`. It emits cache hit/miss, per-call
+  backend latency, and retry/backoff events to **stderr** (report output on
+  stdout is unaffected). The two ad-hoc cache warnings now route through it too.
+
+### Internal
+- `simpleHourlyCost` helper collapses the identical single-component return in 10
+  Huawei/Alibaba mappers (no behaviour change).
+
+### Tests
+- `TestParseAlibabaHuaweiCurrency`, `TestExpectedCurrencyFor` (C1); unknown-region
+  error assertion (C3); IOPS-first EBS fixture (C2); `logger_test` gating; and
+  `alibaba_huawei_mapper_test.go` per-mapper Parse tests incl. a USD-propagation
+  subtest guarding C1 at the mapper level.
+- All **60** mappers (Tencent 24 / AWS 18 / Alibaba 9 / Huawei 9) pass `go vet`
+  and `go test -race` (6/6 packages, incl. the new `internal/logger`).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

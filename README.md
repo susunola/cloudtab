@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 59 resource types across four providers.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 60 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -175,6 +175,7 @@ cloudtab breakdown --path plan.json --no-cache
 | `cloudtab cache clear` | Removes the on-disk `cache.db`; a missing file is a no-op, not an error. |
 | `breakdown --no-cache` / `diff --no-cache` | Bypass the cache for that run (useful after a cloud price change). |
 | `--cache-ttl <dur>` | Per-entry TTL (default `24h`); also swept on cache open. |
+| `breakdown --debug` / `diff --debug` | Emit diagnostics to **stderr** — cache hit/miss, per-call backend latency, and retry/backoff events (report stays on stdout). |
 
 Sample output:
 
@@ -218,6 +219,7 @@ Sample output:
 | CDN | `tencentcloud_cdn_domain` | No InquiryPrice API (static usage-note placeholder) |
 | CFS | `tencentcloud_cfs_file_system` | No InquiryPrice API (static usage-note placeholder) |
 | SCF | `tencentcloud_scf_function` | No InquiryPrice API (static usage-note placeholder) |
+| Direct Connect Gateway | `tencentcloud_dc_gateway` | `vpc:InquirePriceCreateDirectConnectGateway` |
 
 ### AWS
 
