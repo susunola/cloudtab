@@ -1425,6 +1425,7 @@ var expectedAllTypes = []string{
 	"tencentcloud_redis_instance",
 	"tencentcloud_sqlserver_instance",
 	"tencentcloud_vpn_gateway",
+	"tencentcloud_dc_gateway",
 	"tencentcloud_cos_bucket",
 	"tencentcloud_cdn_domain",
 	"tencentcloud_cfs_file_system",
