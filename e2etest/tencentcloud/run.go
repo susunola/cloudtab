@@ -1,9 +1,10 @@
 // E2E price accuracy test orchestrator for cloudtab Tencent Cloud products.
 //
 // Usage:
-//   go run run.go --all
-//   go run run.go --products=cvm,mysql
-//   go run run.go --products=cvm --skip-terraform
+//
+//	go run run.go --all
+//	go run run.go --products=cvm,mysql
+//	go run run.go --products=cvm --skip-terraform
 //
 // Requires: TENCENTCLOUD_SECRET_ID, TENCENTCLOUD_SECRET_KEY env vars.
 package main
@@ -41,8 +42,8 @@ type rawResponse struct {
 
 // cloudtabPriceRecord saves cloudtab's parsed CostComponents.
 type cloudtabPriceRecord struct {
-	Address    string                `json:"address"`
-	Type       string                `json:"type"`
+	Address    string                 `json:"address"`
+	Type       string                 `json:"type"`
 	Components []output.CostComponent `json:"components"`
 }
 

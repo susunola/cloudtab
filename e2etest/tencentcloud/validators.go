@@ -396,9 +396,9 @@ type cynosdbValidator struct{}
 
 func (v cynosdbValidator) Validate(req pricing.PriceRequest, raw []byte, comps []output.CostComponent) []CheckResult {
 	type priceBlock struct {
-		UnitPrice         float64 `json:"UnitPrice"`
-		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
-		TotalPrice        float64 `json:"TotalPrice"`
+		UnitPrice          float64 `json:"UnitPrice"`
+		UnitPriceDiscount  float64 `json:"UnitPriceDiscount"`
+		TotalPrice         float64 `json:"TotalPrice"`
 		TotalPriceDiscount float64 `json:"TotalPriceDiscount"`
 	}
 	var wrap struct {

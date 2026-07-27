@@ -31,8 +31,8 @@ func (HuaweiELB) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 	}, nil
 }
 
-func (HuaweiELB) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseHuaweiPrice(raw)
+func (HuaweiELB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseHuaweiPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

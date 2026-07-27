@@ -51,8 +51,8 @@ func (AlibabaECS) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
-func (AlibabaECS) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaECS) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

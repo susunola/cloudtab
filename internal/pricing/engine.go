@@ -240,6 +240,21 @@ func (e *Engine) siteKeyForProvider(provider string) string {
 	}
 }
 
+// ExpectedCurrencyFor returns the currency cloudtab expects for a provider on
+// its configured site. Alibaba Cloud and Huawei Cloud International price in
+// USD; every other provider/site combination prices in CNY. Mappers pass this
+// into the provider parse helpers so a response that omits the currency field
+// is labelled correctly instead of being silently assumed CNY (which would let
+// an intl USD quote be summed with CNY totals). An explicit currency returned
+// by the provider API always overrides this value.
+func (e *Engine) ExpectedCurrencyFor(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if (provider == providerAlibaba || provider == providerHuawei) && e.siteKeyForProvider(provider) == "intl" {
+		return "USD"
+	}
+	return "CNY"
+}
+
 // PriceRequest is the neutral request submitted by a Mapper.
 //
 //	Provider: "" | "tencentcloud" (default) | "aws". Selects the pricing
@@ -262,7 +277,14 @@ type PriceRequest struct {
 	Product  string
 	Action   string
 	Region   string
-	Params   map[string]interface{}
+	// ExpectedCurrency is the currency cloudtab expects for this request's
+	// provider+site (USD for International Alibaba/Huawei, CNY otherwise).
+	// Mappers thread it into the provider parse helpers so a response that
+	// omits its own currency field is labelled correctly instead of being
+	// silently assumed CNY. It is advisory only — an explicit API currency
+	// always wins. The engine sets it on the request copy passed to Parse.
+	ExpectedCurrency string
+	Params           map[string]interface{}
 }
 
 // provider returns the request's provider, defaulting to Tencent Cloud when

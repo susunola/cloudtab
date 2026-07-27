@@ -150,3 +150,99 @@ func TestPreferDiscount(t *testing.T) {
 		t.Errorf("both zero: got %v, want 0", got)
 	}
 }
+
+// TestParseAlibabaHuaweiCurrency guards C1: an International Alibaba/Huawei
+// response that omits its currency field must be labelled USD (the engine
+// threads the expected currency for the provider's site), NOT silently assumed
+// CNY — otherwise an intl USD quote would be summed with CNY totals. An
+// explicit API currency always wins over the expected one.
+func TestParseAlibabaHuaweiCurrency(t *testing.T) {
+	alibabaEmpty := `{"Data":{"Currency":"","ModuleDetails":{"ModuleDetail":[{"ModuleCode":"X","CostAfterDiscount":10}]}}}`
+	alibabaCNY := `{"Data":{"Currency":"CNY","ModuleDetails":{"ModuleDetail":[{"ModuleCode":"X","CostAfterDiscount":10}]}}}`
+	huaweiEmpty := `{"amount":5,"currency":""}`
+	huaweiUSD := `{"amount":5,"currency":"USD"}`
+
+	cases := []struct {
+		name     string
+		raw      string
+		parse    func(raw, expected string) (string, error)
+		expected string
+		want     string
+	}{
+		{
+			name: "alibaba intl: empty currency -> USD",
+			raw:  alibabaEmpty,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseAlibabaPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "USD",
+			want:     "USD",
+		},
+		{
+			name: "alibaba domestic: empty currency -> CNY",
+			raw:  alibabaEmpty,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseAlibabaPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "CNY",
+			want:     "CNY",
+		},
+		{
+			name: "alibaba: explicit currency wins over expected",
+			raw:  alibabaCNY,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseAlibabaPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "USD",
+			want:     "CNY",
+		},
+		{
+			name: "huawei intl: empty currency -> USD",
+			raw:  huaweiEmpty,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseHuaweiPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "USD",
+			want:     "USD",
+		},
+		{
+			name: "huawei domestic: empty currency -> CNY",
+			raw:  huaweiEmpty,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseHuaweiPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "CNY",
+			want:     "CNY",
+		},
+		{
+			name: "huawei: explicit currency wins over expected",
+			raw:  huaweiUSD,
+			parse: func(raw, expected string) (string, error) {
+				p, err := parseHuaweiPrice([]byte(raw), expected)
+				return p.Currency, err
+			},
+			expected: "CNY",
+			want:     "USD",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := c.parse(c.raw, c.expected)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("currency = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestExpectedCurrencyFor mirrors the engine method that decides the expected
+// currency per provider/site. Intl Alibaba/Huawei -> USD; everything else CNY.
+// (Defined in the pricing package's engine_test.go since it exercises Engine.)

@@ -152,9 +152,9 @@ func discoverPostgres(cred *common.Credential, region, zone string) {
 		}
 		fmt.Printf("  -- DBMajorVersion=%s (%d classes)\n", ver, len(classes))
 		type row struct {
-			spec           string
-			cpu, mem       uint64
-			minSt, maxSt   uint64
+			spec         string
+			cpu, mem     uint64
+			minSt, maxSt uint64
 		}
 		var rows []row
 		for _, c := range classes {

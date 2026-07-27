@@ -41,8 +41,8 @@ func (AlibabaVPN) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
-func (AlibabaVPN) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaVPN) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

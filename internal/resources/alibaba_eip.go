@@ -47,8 +47,8 @@ func (AlibabaEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
-func (AlibabaEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	modules, currency, err := parseAlibabaModules(raw)
+func (AlibabaEIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	modules, currency, err := parseAlibabaModules(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (AlibabaEIP) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostCompon
 	if len(comps) == 0 {
 		// Fallback for responses that do not include ModuleCode: report a single
 		// daily component so callers still see a total.
-		info, _ := parseAlibabaPrice(raw)
+		info, _ := parseAlibabaPrice(raw, req.ExpectedCurrency)
 		comps = append(comps, output.CostComponent{
 			Name:        "Alibaba EIP",
 			Unit:        "DAY",

@@ -68,7 +68,7 @@ func (HuaweiEIP) Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
 }
 
 func (HuaweiEIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseHuaweiPrice(raw)
+	info, err := parseHuaweiPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

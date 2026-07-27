@@ -68,9 +68,9 @@ func isPrepaid(req pricing.PriceRequest) bool {
 				return true
 			}
 			if strings.Contains(strings.ToUpper(s), "PREPAID") {
-		return true
-	}
-}
+				return true
+			}
+		}
 
 	}
 	// Check common field names used by various mappers

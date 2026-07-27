@@ -144,10 +144,12 @@ type alibabaModulePrice struct {
 
 // parseAlibabaPrice unmarshals a raw Alibaba Cloud BSS GetPayAsYouGoPrice
 // response into a simplified price info struct. It sums CostAfterDiscount
-// across all module details, falling back to OriginalCost. Currency defaults
-// to "CNY".
-func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
-	modules, currency, err := parseAlibabaModules(raw)
+// across all module details, falling back to OriginalCost. When the response
+// omits its currency field, expectedCurrency is used (intl Alibaba quotes in
+// USD) so the price is labelled correctly instead of silently assumed CNY; an
+// explicit API currency always wins over expectedCurrency.
+func parseAlibabaPrice(raw []byte, expectedCurrency string) (alibabaPriceInfo, error) {
+	modules, currency, err := parseAlibabaModules(raw, expectedCurrency)
 	if err != nil {
 		return alibabaPriceInfo{}, err
 	}
@@ -162,7 +164,9 @@ func parseAlibabaPrice(raw []byte) (alibabaPriceInfo, error) {
 // code and discounted cost. This lets mappers with mixed PriceType modules
 // (e.g. EIP bandwidth per-day + ISP per-hour) convert each component with the
 // correct unit instead of collapsing everything into a single daily rate.
-func parseAlibabaModules(raw []byte) ([]alibabaModulePrice, string, error) {
+// expectedCurrency is used only when the response omits its own Currency field
+// (see parseAlibabaPrice).
+func parseAlibabaModules(raw []byte, expectedCurrency string) ([]alibabaModulePrice, string, error) {
 	var resp struct {
 		Data struct {
 			Currency      string `json:"Currency"`
@@ -180,7 +184,11 @@ func parseAlibabaModules(raw []byte) ([]alibabaModulePrice, string, error) {
 	}
 	cur := resp.Data.Currency
 	if cur == "" {
-		cur = "CNY"
+		if expectedCurrency != "" {
+			cur = expectedCurrency
+		} else {
+			cur = "CNY"
+		}
 	}
 	var modules []alibabaModulePrice
 	for _, md := range resp.Data.ModuleDetails.ModuleDetail {
@@ -203,8 +211,10 @@ type huaweiPriceInfo struct {
 
 // parseHuaweiPrice unmarshals a raw Huawei Cloud BSS ListOnDemandResourceRatings
 // response. It reads the top-level "amount" field, falling back to
-// "official_website_amount". Currency defaults to "CNY".
-func parseHuaweiPrice(raw []byte) (huaweiPriceInfo, error) {
+// "official_website_amount". An explicit API currency always wins; when the
+// response omits it, expectedCurrency is used (intl Huawei quotes in USD) so
+// the price is labelled correctly instead of silently assumed CNY.
+func parseHuaweiPrice(raw []byte, expectedCurrency string) (huaweiPriceInfo, error) {
 	var resp struct {
 		Amount                *float64 `json:"amount"`
 		OfficialWebsiteAmount *float64 `json:"official_website_amount"`
@@ -223,6 +233,8 @@ func parseHuaweiPrice(raw []byte) (huaweiPriceInfo, error) {
 	cur := "CNY"
 	if resp.Currency != nil && *resp.Currency != "" {
 		cur = *resp.Currency
+	} else if expectedCurrency != "" {
+		cur = expectedCurrency
 	}
 	return huaweiPriceInfo{Amount: amt, Currency: cur}, nil
 }

@@ -34,8 +34,8 @@ func (AlibabaDisk) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	}, nil
 }
 
-func (AlibabaDisk) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaDisk) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

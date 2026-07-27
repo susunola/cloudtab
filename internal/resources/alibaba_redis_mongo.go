@@ -30,8 +30,8 @@ func (AlibabaRedis) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 	}, nil
 }
 
-func (AlibabaRedis) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaRedis) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +70,8 @@ func (AlibabaMongoDB) Extract(r parser.PlannedResource) (pricing.PriceRequest, e
 	}, nil
 }
 
-func (AlibabaMongoDB) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaMongoDB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

@@ -36,8 +36,8 @@ func (AlibabaNAT) Extract(r parser.PlannedResource) (pricing.PriceRequest, error
 	}, nil
 }
 
-func (AlibabaNAT) Parse(_ pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	info, err := parseAlibabaPrice(raw)
+func (AlibabaNAT) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	info, err := parseAlibabaPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

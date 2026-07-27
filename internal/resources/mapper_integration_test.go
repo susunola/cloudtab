@@ -1403,10 +1403,11 @@ var expectedAllTypes = []string{
 	"huaweicloud_nat_gateway",
 	"huaweicloud_rds_instance",
 	"huaweicloud_vpc_eip",
-	// Tencent Cloud (23 — note: cwp_license_order == tencentcloud_cwp_license_order;
+	// Tencent Cloud (24 — note: cwp_license_order == tencentcloud_cwp_license_order;
 	// the 4 static usage-driven resources below have no InquiryPrice* API and are
 	// registered as StaticMappers returning a zero-cost placeholder + note)
 	"tencentcloud_cbs_storage",
+	"tencentcloud_dc_gateway",
 	"tencentcloud_clb_instance",
 	"tencentcloud_cloudhsm_instance",
 	"tencentcloud_cwp_license_order",

@@ -571,7 +571,15 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 			Address: r.Address, Type: r.Type, Reason: err.Error(),
 		}, nil
 	}
-	comps, err := mapper.Parse(req, raw)
+	// Thread the expected currency (derived from the provider's configured
+	// site) into the parse step. A response that omits its currency field is
+	// then labelled correctly — an intl Alibaba/Huawei quote is USD, not the
+	// CNY default that would let it be silently summed with CNY totals. The
+	// ExpectedCurrency is set only on the copy handed to Parse, so the request
+	// that flowed through Query (and thus the cache key) is left untouched.
+	parseReq := req
+	parseReq.ExpectedCurrency = engine.ExpectedCurrencyFor(req.Provider)
+	comps, err := mapper.Parse(parseReq, raw)
 	if err != nil {
 		if failOnError {
 			return nil, nil, fmt.Errorf("parse %s: %w", r.Address, err)

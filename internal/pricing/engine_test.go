@@ -394,3 +394,41 @@ func TestBackendSiteConstruction(t *testing.T) {
 		t.Skip("skipping Huawei backend construction: no HUAWEI_ACCESS_KEY_ID (Build() requires network IAM lookup)")
 	}
 }
+
+// TestExpectedCurrencyFor guards C1: the expected currency per provider/site is
+// USD only for International Alibaba/Huawei; everything else is CNY. This is the
+// value the engine threads into the mapper parse step so an intl USD quote is
+// labelled correctly instead of silently assumed CNY.
+func TestExpectedCurrencyFor(t *testing.T) {
+	cases := []struct {
+		provider string
+		site     string
+		want     string
+	}{
+		{"alibaba", "intl", "USD"},
+		{"alibaba", "domestic", "CNY"},
+		{"huawei", "intl", "USD"},
+		{"huawei", "domestic", "CNY"},
+		{"tencentcloud", "intl", "CNY"},
+		{"aws", "intl", "CNY"},
+		{"", "", "CNY"},
+	}
+	for _, c := range cases {
+		t.Run(c.provider+"/"+c.site, func(t *testing.T) {
+			e := &Engine{}
+			switch c.provider {
+			case "alibaba":
+				e.cfg.AlibabaSite = c.site
+			case "huawei":
+				e.cfg.HuaweiSite = c.site
+			case "tencentcloud":
+				e.cfg.Site = c.site
+			case "aws":
+				e.cfg.AWSSite = c.site
+			}
+			if got := e.ExpectedCurrencyFor(c.provider); got != c.want {
+				t.Errorf("ExpectedCurrencyFor(%q) with site %q = %q, want %q", c.provider, c.site, got, c.want)
+			}
+		})
+	}
+}
