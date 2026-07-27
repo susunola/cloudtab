@@ -67,8 +67,9 @@ func TestTencentMapperRequestBodies(t *testing.T) {
 			"charge_type": "PREPAID", "prepaid_period": 12}},
 			"cbs", "InquiryPriceCreateDisks", map[string]interface{}{
 				"DiskChargeType": "PREPAID", "DiskChargePrepaid": map[string]interface{}{"Period": 1}}, false},
-		{"eip", EIP{}, parser.PlannedResource{Type: "tencentcloud_eip", Region: "ap-guangzhou", After: map[string]interface{}{}},
-			"", "", nil, true},
+		{"eip", EIP{}, parser.PlannedResource{Type: "tencentcloud_eip", Region: "ap-guangzhou", After: map[string]interface{}{
+			"internet_charge_type": "TRAFFIC_POSTPAID_BY_HOUR", "internet_max_bandwidth_out": 10}},
+			"vpc", "InquiryPriceAllocateAddresses", map[string]interface{}{"InternetChargeType": "TRAFFIC_POSTPAID_BY_HOUR"}, false},
 		{"clb", CLBInstance{}, parser.PlannedResource{Type: "tencentcloud_clb_instance", Region: "ap-guangzhou", After: map[string]interface{}{}},
 			"clb", "InquiryPriceCreateLoadBalancer", map[string]interface{}{
 				"LoadBalancerChargeType": "POSTPAID", "GoodsNum": 1}, false},

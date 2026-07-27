@@ -23,7 +23,7 @@ func monthlyFromPrice(chargeUnit string, unitPriceDiscount, discountPrice float6
 	switch strings.ToUpper(strings.TrimSpace(chargeUnit)) {
 	case "HOUR":
 		return unitPriceDiscount * hoursPerMonth, unitPriceDiscount
-	case "MONTH":
+	case "MONTH", "NONE":
 		return discountPrice, 0
 	case "DAY":
 		return unitPriceDiscount * (hoursPerMonth / 24), 0 // rare; day-rate × ~30.4 days

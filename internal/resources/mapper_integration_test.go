@@ -6,6 +6,7 @@ import (
 
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
+	"github.com/susunola/cloudtab/internal/pricing"
 )
 
 // ----- CVM integration test -----
@@ -41,10 +42,12 @@ func TestCVMExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("CVM returned 0 components")
 	}
-	for _, c := range comps {
-		if c.MonthlyCost < 0 {
-			t.Errorf("component %s has negative monthly cost: %v", c.Name, c.MonthlyCost)
-		}
+	// POSTPAID hourly 0.5元 → monthly 0.5×730.
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("CVM hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("CVM monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
 	}
 }
 
@@ -121,6 +124,13 @@ func TestCBSExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("CBS returned 0 components")
 	}
+	// POSTPAID hourly 0.1元 → monthly 0.1×730.
+	if comps[0].HourlyCost != 0.1 {
+		t.Errorf("CBS hourly = %v, want 0.1", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.1*hoursPerMonth {
+		t.Errorf("CBS monthly = %v, want %v", comps[0].MonthlyCost, 0.1*hoursPerMonth)
+	}
 }
 
 // ----- CLB integration test -----
@@ -155,7 +165,107 @@ func TestCLBExtractAndParse(t *testing.T) {
 	}
 }
 
-// TestCLBBandwidthUnitPriceFallback verifies that a CLB response which carries
+// TestCLBLcuPrice verifies the LCU pricing dimension is parsed when present
+// (LCU-style performance-guaranteed CLB).
+func TestCLBLcuPrice(t *testing.T) {
+	m := CLBInstance{}
+	req := pricing.PriceRequest{
+		Product: "clb",
+		Action:  "InquiryPriceCreateLoadBalancer",
+		Region:  "ap-beijing",
+		Params:  map[string]interface{}{"LoadBalancerType": "OPEN"},
+	}
+	// Instance 0.3元/h + LCU 0.05元/h; no bandwidth.
+	raw := clbInquiryPriceFullResp(t, "HOUR", 0.3, 0, 0.05)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("CLB Parse: %v", err)
+	}
+	// Expect 2 components: instance, LCU (bandwidth omitted — zero price).
+	if len(comps) != 2 {
+		t.Fatalf("CLB components = %d, want 2", len(comps))
+	}
+	wantHourly := map[string]float64{
+		"CLB (OPEN)": 0.3,
+		"CLB LCU":    0.05,
+	}
+	for _, c := range comps {
+		want, ok := wantHourly[c.Name]
+		if !ok {
+			t.Errorf("unexpected component %q", c.Name)
+			continue
+		}
+		if c.HourlyCost != want {
+			t.Errorf("component %s hourly = %v, want %v", c.Name, c.HourlyCost, want)
+		}
+		if c.MonthlyCost != want*hoursPerMonth {
+			t.Errorf("component %s monthly = %v, want %v", c.Name, c.MonthlyCost, want*hoursPerMonth)
+		}
+	}
+}
+
+// TestCLBBandwidthByTraffic verifies that a CLB response whose BandwidthPrice
+// has ChargeUnit "GB" (traffic-based billing, 元/GB) is shown as a rate only
+// with zero monthly/hourly estimates (monthly cost depends on traffic volume,
+// which is not available from the plan).
+func TestCLBBandwidthByTraffic(t *testing.T) {
+	m := CLBInstance{}
+	req := pricing.PriceRequest{
+		Product: "clb",
+		Action:  "InquiryPriceCreateLoadBalancer",
+		Region:  "ap-beijing",
+		Params:  map[string]interface{}{"LoadBalancerType": "OPEN"},
+	}
+	// Instance 0.2元/h (HOUR) + bandwidth 0.8元/GB (GB).
+	t.Helper()
+	type itemPrice struct {
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+	}
+	type priceShape struct {
+		InstancePrice  itemPrice `json:"InstancePrice"`
+		BandwidthPrice itemPrice `json:"BandwidthPrice"`
+	}
+	type respShape struct {
+		Price    priceShape `json:"Price"`
+		Response struct {
+			Price priceShape `json:"Price"`
+		} `json:"Response"`
+	}
+	p := priceShape{
+		InstancePrice:  itemPrice{UnitPriceDiscount: 0.2, ChargeUnit: "HOUR"},
+		BandwidthPrice: itemPrice{UnitPriceDiscount: 0.8, ChargeUnit: "GB"},
+	}
+	resp := respShape{Price: p}
+	resp.Response.Price = p
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("CLB Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("CLB components = %d, want 2", len(comps))
+	}
+	// First component: instance, billed hourly.
+	if comps[0].Name != "CLB (OPEN)" {
+		t.Errorf("component 0 name = %q, want CLB (OPEN)", comps[0].Name)
+	}
+	if comps[0].HourlyCost != 0.2 {
+		t.Errorf("instance hourly = %v, want 0.2", comps[0].HourlyCost)
+	}
+	// Second component: bandwidth by traffic (GB) — rate only, no monthly/hourly.
+	if comps[1].Unit != "GB" {
+		t.Errorf("bandwidth unit = %q, want GB", comps[1].Unit)
+	}
+	if comps[1].HourlyCost != 0 || comps[1].MonthlyCost != 0 {
+		t.Errorf("bandwidth by traffic should have zero hourly/monthly, got %v/%v",
+			comps[1].HourlyCost, comps[1].MonthlyCost)
+	}
+}
+
 // BandwidthPrice.UnitPrice but leaves UnitPriceDiscount at 0 still produces a
 // non-zero bandwidth cost.
 func TestCLBBandwidthUnitPriceFallback(t *testing.T) {
@@ -227,6 +337,63 @@ func TestPostgreSQLExtractAndParseFullPipeline(t *testing.T) {
 	}
 	if comps[0].MonthlyCost != 150.0 {
 		t.Errorf("monthly = %v, want 150.0", comps[0].MonthlyCost)
+	}
+}
+
+// TestPostgreSQLNormalizesPostpaid verifies that the TF charge_type
+// "POSTPAID_BY_HOUR" is normalized to the API enum "POSTPAID".
+func TestPostgreSQLNormalizesPostpaid(t *testing.T) {
+	req, err := PostgreSQLInstance{}.Extract(parser.PlannedResource{
+		Type:   "tencentcloud_postgresql_instance",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"availability_zone":    "ap-guangzhou-3",
+			"spec_code":            "pg.it2.large",
+			"storage":              100,
+			"instance_charge_type": "POSTPAID_BY_HOUR",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Extract() error = %v", err)
+	}
+	if req.Params["InstanceChargeType"] != "POSTPAID" {
+		t.Fatalf("InstanceChargeType = %v, want POSTPAID", req.Params["InstanceChargeType"])
+	}
+}
+
+// TestPostgreSQLPostpaidHourly verifies POSTPAID pricing: the API returns
+// the hourly rate in 分; Parse must convert to 元/hour and ×730 for monthly.
+func TestPostgreSQLPostpaidHourly(t *testing.T) {
+	m := PostgreSQLInstance{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_postgresql_instance.pg",
+		Type:    "tencentcloud_postgresql_instance",
+		Region:  "ap-beijing",
+		After: map[string]interface{}{
+			"availability_zone":    "ap-beijing-3",
+			"spec_code":            "pg.it2.large",
+			"storage":              100,
+			"instance_charge_type": "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Postgres Extract: %v", err)
+	}
+	// POSTPAID: Price=30 (分) = 0.3 元/hour.
+	raw := []byte(`{"Response":{"Price":30,"OriginalPrice":30,"Currency":"CNY"}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Postgres Parse: %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("components = %d, want 1", len(comps))
+	}
+	if comps[0].HourlyCost != 0.3 {
+		t.Errorf("hourly = %v, want 0.3", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.3*hoursPerMonth {
+		t.Errorf("monthly = %v, want %v", comps[0].MonthlyCost, 0.3*hoursPerMonth)
 	}
 }
 
@@ -371,6 +538,84 @@ func TestVPNGatewayPrepaidWithBandwidth(t *testing.T) {
 	}
 	if comps[0].MonthlyCost != 100 {
 		t.Errorf("VPN instance monthly = %v, want 100", comps[0].MonthlyCost)
+	}
+}
+
+// TestVPNGatewayPostpaidByTraffic verifies the POSTPAID_BY_HOUR response where
+// the instance is billed per-hour (HOUR) and bandwidth is billed per-GB
+// (traffic-based). The bandwidth line must show the rate only with zero
+// monthly/hourly estimates (per API doc example 2).
+func TestVPNGatewayPostpaidByTraffic(t *testing.T) {
+	m := VPNGateway{}
+	r := parser.PlannedResource{
+		Address: "tencentcloud_vpn_gateway.gw",
+		Type:    "tencentcloud_vpn_gateway",
+		Region:  "ap-guangzhou",
+		After: map[string]interface{}{
+			"bandwidth":   5,
+			"charge_type": "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("VPN Extract: %v", err)
+	}
+	// Mirrors a real API POSTPAID_BY_HOUR response:
+	// InstancePrice: UnitPrice=0.48 (原价), DiscountPrice=0.228 (折后价元/hour), ChargeUnit="HOUR"
+	// BandwidthPrice: UnitPrice=0.8 (元/GB), DiscountPrice=0.374 (折后元/GB), ChargeUnit="GB"
+	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPrice":0.48,"DiscountPrice":0.228,"OriginalPrice":0.48,"ChargeUnit":"HOUR"},"BandwidthPrice":{"UnitPrice":0.8,"DiscountPrice":0.374,"OriginalPrice":0.8,"ChargeUnit":"GB"}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("VPN Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("VPN components = %d, want 2", len(comps))
+	}
+	// Instance: hourly billing, 0.228 元/h (折后) → monthly 0.228×730.
+	if comps[0].HourlyCost != 0.228 {
+		t.Errorf("VPN instance hourly = %v, want 0.228", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.228*hoursPerMonth {
+		t.Errorf("VPN instance monthly = %v, want %v", comps[0].MonthlyCost, 0.228*hoursPerMonth)
+	}
+	// Bandwidth: per-GB traffic, rate only — no monthly/hourly estimate.
+	if comps[1].Unit != "GB" {
+		t.Errorf("VPN bandwidth unit = %q, want GB", comps[1].Unit)
+	}
+	if comps[1].HourlyCost != 0 || comps[1].MonthlyCost != 0 {
+		t.Errorf("VPN bandwidth by traffic should have zero hourly/monthly, got %v/%v",
+			comps[1].HourlyCost, comps[1].MonthlyCost)
+	}
+}
+
+// TestVPNGatewayPrepaidNone verifies the PREPAID response (empty ChargeUnit,
+// period total). Uses a real API response captured from InquiryPriceCreateVpnGateway
+// with InternetMaxBandwidthOut=10, InstanceChargeType=PREPAID, Period=1.
+func TestVPNGatewayPrepaidNone(t *testing.T) {
+	m := VPNGateway{}
+	req := pricing.PriceRequest{
+		Product: "vpc",
+		Action:  "InquiryPriceCreateVpnGateway",
+		Region:  "ap-guangzhou",
+		Params:  map[string]interface{}{"InternetMaxBandwidthOut": 10, "InstanceChargeType": "PREPAID"},
+	}
+	// Real API response (PREPAID, Period=1): instance 427.86 元 (1-month total,
+	// ChargeUnit is empty string, NOT "none" as docs suggest), bandwidth 0.
+	raw := []byte(`{"Response":{"Price":{"BandwidthPrice":{"ChargeUnit":"","DiscountPrice":0,"OriginalPrice":0,"UnitPrice":0},"InstancePrice":{"ChargeUnit":"","DiscountPrice":427.86,"OriginalPrice":880,"UnitPrice":0}}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("VPN Parse: %v", err)
+	}
+	// Only instance component (bandwidth is 0 → skipped).
+	if len(comps) != 1 {
+		t.Fatalf("VPN components = %d, want 1 (bandwidth is 0)", len(comps))
+	}
+	// PREPAID empty ChargeUnit: DiscountPrice is the period (Period=1 → monthly) total.
+	if comps[0].MonthlyCost != 427.86 {
+		t.Errorf("VPN instance monthly = %v, want 427.86", comps[0].MonthlyCost)
+	}
+	if comps[0].HourlyCost != 0 {
+		t.Errorf("VPN PREPAID should have zero hourly, got %v", comps[0].HourlyCost)
 	}
 }
 
@@ -1075,27 +1320,37 @@ func TestGAAPBillingTypeFlow(t *testing.T) {
 	}
 }
 
-// ----- EIP StaticMapper test -----
+// ----- EIP integration test -----
 
-func TestEIPEstimate(t *testing.T) {
+func TestEIPExtractAndParse(t *testing.T) {
 	m := EIP{}
 	r := parser.PlannedResource{
 		Address: "tencentcloud_eip.pub",
 		Type:    "tencentcloud_eip",
+		Region:  "ap-guangzhou",
 		After: map[string]interface{}{
 			"internet_max_bandwidth_out": 10,
 			"internet_charge_type":       "TRAFFIC_POSTPAID_BY_HOUR",
 		},
 	}
-	comps, err := m.Estimate(r)
+	req, err := m.Extract(r)
 	if err != nil {
-		t.Fatalf("EIP Estimate: %v", err)
+		t.Fatalf("EIP Extract: %v", err)
 	}
-	// EIP returns a zero-cost placeholder; just verify it doesn't panic.
-	for _, c := range comps {
-		if c.MonthlyCost != 0 {
-			t.Errorf("EIP component %s has non-zero cost: %v", c.Name, c.MonthlyCost)
-		}
+	raw := eipInquiryPriceResp(t, "HOUR", 0.5, 0.5)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("EIP Parse: %v", err)
+	}
+	if len(comps) == 0 {
+		t.Fatal("EIP returned 0 components")
+	}
+	// POSTPAID hourly 0.5元 → monthly 0.5×730.
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("EIP hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("EIP monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
 	}
 }
 
@@ -1202,28 +1457,39 @@ func TestDefaultRegistryHasAllTypes(t *testing.T) {
 
 // ----- mock response helpers -----
 
-// inquiryPriceRunInstancesResp builds a fake CVM InquiryPriceRunInstances response JSON.
-// unitPriceDiscount is CNY/hour, discountPrice is total discounted price.
+// inquiryPriceRunInstancesResp builds a fake CVM InquiryPriceRunInstances
+// response JSON that matches the real SDK ToJsonString() output: the price
+// data is nested under "Response.Price.InstancePrice" (and "Response.Price.
+// BandwidthPrice" when bandwidth > 0). A top-level mirror is also included
+// for backward compatibility with older test paths.
 func inquiryPriceRunInstancesResp(t *testing.T, chargeUnit string, unitPriceDiscount, discountPrice float64) []byte {
 	t.Helper()
-	type priceInfo struct {
+	type itemPrice struct {
+		UnitPrice         float64 `json:"UnitPrice"`
 		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		OriginalPrice     float64 `json:"OriginalPrice"`
 		DiscountPrice     float64 `json:"DiscountPrice"`
 		ChargeUnit        string  `json:"ChargeUnit"`
 	}
-	resp := struct {
-		PriceInfo []priceInfo `json:"PriceInfo"`
-		Response  struct {
-			PriceInfo []priceInfo `json:"PriceInfo"`
-		} `json:"Response"`
-	}{
-		PriceInfo: []priceInfo{{
-			UnitPriceDiscount: unitPriceDiscount,
-			DiscountPrice:     discountPrice,
-			ChargeUnit:        chargeUnit,
-		}},
+	type priceStruct struct {
+		InstancePrice itemPrice `json:"InstancePrice"`
 	}
-	resp.Response.PriceInfo = resp.PriceInfo
+	type respShape struct {
+		Price    priceStruct `json:"Price"`
+		Response struct {
+			Price priceStruct `json:"Price"`
+		} `json:"Response"`
+	}
+	resp := respShape{
+		Price: priceStruct{
+			InstancePrice: itemPrice{
+				UnitPriceDiscount: unitPriceDiscount,
+				DiscountPrice:     discountPrice,
+				ChargeUnit:        chargeUnit,
+			},
+		},
+	}
+	resp.Response.Price = resp.Price
 	b, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("marshal mock response: %v", err)
@@ -1231,12 +1497,112 @@ func inquiryPriceRunInstancesResp(t *testing.T, chargeUnit string, unitPriceDisc
 	return b
 }
 
+// inquiryPriceCreateDisksResp builds a fake CBS InquiryPriceCreateDisks
+// response JSON that matches the real SDK ToJsonString() output: the disk
+// price is nested under "Response.DiskPrice". A top-level mirror is also
+// included for backward compatibility with older test paths.
 func inquiryPriceCreateDisksResp(t *testing.T, chargeUnit string, unitPriceDiscount, discountPrice float64) []byte {
-	return inquiryPriceRunInstancesResp(t, chargeUnit, unitPriceDiscount, discountPrice)
+	t.Helper()
+	type diskPrice struct {
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		DiscountPrice     float64 `json:"DiscountPrice"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+	}
+	type respShape struct {
+		DiskPrice diskPrice `json:"DiskPrice"`
+		Response  struct {
+			DiskPrice diskPrice `json:"DiskPrice"`
+		} `json:"Response"`
+	}
+	resp := respShape{
+		DiskPrice: diskPrice{
+			UnitPriceDiscount: unitPriceDiscount,
+			DiscountPrice:     discountPrice,
+			ChargeUnit:        chargeUnit,
+		},
+	}
+	resp.Response.DiskPrice = resp.DiskPrice
+	b, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal mock response: %v", err)
+	}
+	return b
 }
 
 func inquiryPriceCreateLBResp(t *testing.T, chargeUnit string, unitPriceDiscount, discountPrice float64) []byte {
+	// CLB uses the same Price.InstancePrice shape as CVM.
 	return inquiryPriceRunInstancesResp(t, chargeUnit, unitPriceDiscount, discountPrice)
+}
+
+// clbInquiryPriceFullResp builds a CLB response carrying all three pricing
+// dimensions (instance/bandwidth/LCU), each as an ItemPrice with the given
+// discounted unit price and charge unit. Zero-value dimensions are emitted but
+// Parse skips them (no non-zero price fields). Matches the real SDK
+// ToJsonString() output: data is nested under "Response.Price".
+func clbInquiryPriceFullResp(t *testing.T, chargeUnit string, inst, bw, lcu float64) []byte {
+	t.Helper()
+	type itemPrice struct {
+		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
+		ChargeUnit        string  `json:"ChargeUnit"`
+	}
+	type priceShape struct {
+		InstancePrice  itemPrice `json:"InstancePrice"`
+		BandwidthPrice itemPrice `json:"BandwidthPrice"`
+		LcuPrice       itemPrice `json:"LcuPrice"`
+	}
+	type respShape struct {
+		Price    priceShape `json:"Price"`
+		Response struct {
+			Price priceShape `json:"Price"`
+		} `json:"Response"`
+	}
+	p := priceShape{
+		InstancePrice:  itemPrice{UnitPriceDiscount: inst, ChargeUnit: chargeUnit},
+		BandwidthPrice: itemPrice{UnitPriceDiscount: bw, ChargeUnit: chargeUnit},
+		LcuPrice:       itemPrice{UnitPriceDiscount: lcu, ChargeUnit: chargeUnit},
+	}
+	resp := respShape{Price: p}
+	resp.Response.Price = p
+	b, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal mock response: %v", err)
+	}
+	return b
+}
+
+// eipInquiryPriceResp builds a fake EIP InquiryPriceAllocateAddresses
+// response JSON matching the real SDK ToJsonString() output. The price is
+// nested under "Response.Price.AddressPrice"; a top-level mirror is included
+// for backward compatibility.
+func eipInquiryPriceResp(t *testing.T, chargeUnit string, discountPrice, unitPrice float64) []byte {
+	t.Helper()
+	type addressPrice struct {
+		UnitPrice     float64 `json:"UnitPrice"`
+		DiscountPrice float64 `json:"DiscountPrice"`
+		ChargeUnit    string  `json:"ChargeUnit"`
+	}
+	type respShape struct {
+		Price struct {
+			AddressPrice addressPrice `json:"AddressPrice"`
+		} `json:"Price"`
+		Response struct {
+			Price struct {
+				AddressPrice addressPrice `json:"AddressPrice"`
+			} `json:"Price"`
+		} `json:"Response"`
+	}
+	resp := respShape{}
+	resp.Price.AddressPrice = addressPrice{
+		UnitPrice:     unitPrice,
+		DiscountPrice: discountPrice,
+		ChargeUnit:    chargeUnit,
+	}
+	resp.Response.Price.AddressPrice = resp.Price.AddressPrice
+	b, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal mock response: %v", err)
+	}
+	return b
 }
 
 func redisInquiryPriceResp(t *testing.T) []byte {

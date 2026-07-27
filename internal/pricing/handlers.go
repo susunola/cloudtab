@@ -185,6 +185,18 @@ var handlers = map[string]productHandler{
 				}
 				return resp.GetBody(), nil
 			},
+			// EIP pricing: SDK has AllocateAddresses but no InquiryPriceAllocateAddresses.
+			"InquiryPriceAllocateAddresses": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquiryPriceAllocateAddresses")
+				if err := req.SetActionParameters(params); err != nil {
+					return nil, err
+				}
+				resp := tcHttp.NewCommonResponse()
+				if err := client.(*vpc.Client).Send(req, resp); err != nil {
+					return nil, err
+				}
+				return resp.GetBody(), nil
+			},
 		},
 	},
 	"mongodb": {
