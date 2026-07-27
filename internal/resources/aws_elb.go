@@ -35,7 +35,7 @@ func (AWSLB) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
 	if family == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("aws_lb: unsupported load_balancer_type %q", lbType)
 	}
-	return awsELBRequest(r.Region, family), nil
+	return awsELBRequest(r.Region, family)
 }
 
 func (AWSLB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
@@ -46,7 +46,7 @@ func (AWSLB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent
 type AWSELB struct{}
 
 func (AWSELB) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-	return awsELBRequest(r.Region, "Load Balancer"), nil
+	return awsELBRequest(r.Region, "Load Balancer")
 }
 
 func (AWSELB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
@@ -55,12 +55,16 @@ func (AWSELB) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponen
 
 // awsELBRequest builds the shared AWSELB price request for a given product
 // family. locationType=AWS Region pins the standard (non-Outposts) SKU.
-func awsELBRequest(region, family string) pricing.PriceRequest {
+func awsELBRequest(region, family string) (pricing.PriceRequest, error) {
+	loc, err := awsLocation(region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	return awsPriceRequest("AWSELB", region,
-		awsFilter("location", awsLocation(region)),
+		awsFilter("location", loc),
 		awsFilter("locationType", "AWS Region"),
 		awsFilter("productFamily", family),
-	)
+	), nil
 }
 
 // parseELB reads the fixed hourly LoadBalancerUsage rate and turns it into a

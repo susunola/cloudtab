@@ -97,8 +97,12 @@ func (AWSMemoryDBCluster) Extract(r parser.PlannedResource) (pricing.PriceReques
 		replicas = 0
 	}
 	nodes := shards * (1 + replicas)
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("MemoryDB", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 	)
 	awsStashMatch(&req, nodeType, fmt.Sprintf("MemoryDB %s", nodeType), nodes)
 	return req, nil
@@ -127,8 +131,12 @@ func (AWSMQBroker) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 	if mode == "ACTIVE_STANDBY_MULTI_AZ" || mode == "CLUSTER_MULTI_AZ" {
 		deployment = "Multi-AZ"
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonMQ", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("brokerEngine", engine),
 		awsFilter("deploymentOption", deployment),
 		awsFilter("productFamily", "Broker Instances"),
@@ -172,8 +180,12 @@ func (AWSMSKCluster) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 	if brokers <= 0 {
 		brokers = 1
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonMSK", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("productFamily", "Managed Streaming for Apache Kafka (MSK)"),
 	)
 	// MSK broker usagetype looks like "USE2-Kafka.m5.large"; the instance_type

@@ -22,8 +22,12 @@ import (
 type AWSEKSCluster struct{}
 
 func (AWSEKSCluster) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	return awsPriceRequest("AmazonEKS", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 	), nil
 }
 
@@ -47,8 +51,12 @@ type AWSNATGateway struct{}
 
 func (AWSNATGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
 	// NAT gateway lives under the EC2 service code.
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	return awsPriceRequest("AmazonEC2", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("productFamily", "NAT Gateway"),
 	), nil
 }

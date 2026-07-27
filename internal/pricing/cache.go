@@ -3,12 +3,13 @@ package pricing
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/susunola/cloudtab/internal/logger"
 )
 
 // cache is a small on-disk KV cache backed by bbolt.
@@ -58,7 +59,7 @@ func openCache(path string, ttl time.Duration) (*cache, error) {
 	// re-read entries get reclaimed (Get only evicts on access). Failures are
 	// non-fatal: the engine still works, just without a clean sweep.
 	if err := c.SweepExpired(); err != nil {
-		fmt.Fprintf(os.Stderr, "cloudtab: warning: price cache sweep failed (%v); continuing\n", err)
+		logger.Warn("price cache sweep failed; continuing", "err", err)
 	}
 	return c, nil
 }

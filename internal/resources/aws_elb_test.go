@@ -73,7 +73,10 @@ func TestAWSELBClassicExtract(t *testing.T) {
 }
 
 func TestParseELBPicksLoadBalancerUsage(t *testing.T) {
-	req := awsELBRequest("us-east-1", "Load Balancer-Application")
+	req, err := awsELBRequest("us-east-1", "Load Balancer-Application")
+	if err != nil {
+		t.Fatalf("awsELBRequest() error = %v", err)
+	}
 	// Multiple SKUs: the LCU one comes first and must be skipped; the fixed
 	// hourly LoadBalancerUsage SKU is the one we want.
 	raw := []byte(`[
@@ -107,7 +110,10 @@ func TestParseELBPicksLoadBalancerUsage(t *testing.T) {
 }
 
 func TestParseELBNoLoadBalancerUsage(t *testing.T) {
-	req := awsELBRequest("us-east-1", "Load Balancer-Application")
+	req, err := awsELBRequest("us-east-1", "Load Balancer-Application")
+	if err != nil {
+		t.Fatalf("awsELBRequest() error = %v", err)
+	}
 	raw := []byte(`[
 		{"product": {"attributes": {"usagetype": "USE1-LCUUsage"}},
 		 "terms": {"OnDemand": {"A": {"priceDimensions": {"A.1": {

@@ -188,17 +188,22 @@ var awsRegionToLocation = map[string]string{
 	"af-south-1":     "Africa (Cape Town)",
 }
 
-// awsLocation resolves a region code to a Price List location name, falling
-// back to the default region's location when the code is unknown or empty.
-func awsLocation(region string) string {
+// awsLocation resolves a region code to a Price List location name.
+//
+// An empty/whitespace region defaults to awsDefaultRegion (us-east-1) so plans
+// that omit the region still price against a valid location. A known region
+// returns its location. An unknown non-empty region is an error: silently
+// falling back to us-east-1 would produce a confidently-wrong price for a
+// region the estimator does not understand, so we fail loudly instead.
+func awsLocation(region string) (string, error) {
 	region = strings.TrimSpace(region)
 	if region == "" {
 		region = awsDefaultRegion
 	}
 	if loc, ok := awsRegionToLocation[region]; ok {
-		return loc
+		return loc, nil
 	}
-	return awsRegionToLocation[awsDefaultRegion]
+	return "", fmt.Errorf("aws: unknown region %q (not in the Price List location table); supported regions are the commercial regions in awsRegionToLocation", region)
 }
 
 // awsRegionOrDefault returns the region if set, otherwise the AWS default. It

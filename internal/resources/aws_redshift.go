@@ -29,9 +29,13 @@ func (AWSRedshiftCluster) Extract(r parser.PlannedResource) (pricing.PriceReques
 	if nodes <= 0 {
 		nodes = 1 // single-node cluster
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonRedshift", r.Region,
 		awsFilter("instanceType", nodeType),
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("productFamily", "Compute Instance"),
 	)
 	req.Params["Quantity"] = nodes

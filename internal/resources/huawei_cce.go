@@ -38,11 +38,5 @@ func (HuaweiCCE) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCompo
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Huawei CCE",
-		Unit:        "HOUR",
-		HourlyCost:  info.Amount,
-		MonthlyCost: info.Amount * hoursPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+	return simpleHourlyCost("Huawei CCE", info.Amount, info.Currency), nil
 }

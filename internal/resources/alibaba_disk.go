@@ -39,11 +39,5 @@ func (AlibabaDisk) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Alibaba Disk",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+	return simpleHourlyCost("Alibaba Disk", info.PriceYuan, info.Currency), nil
 }

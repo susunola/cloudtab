@@ -162,10 +162,17 @@ func TestAWSTenancy(t *testing.T) {
 }
 
 func TestAWSLocationUnknownRegionFallsBack(t *testing.T) {
-	if got := awsLocation("xx-nowhere-9"); got != awsRegionToLocation["us-east-1"] {
-		t.Fatalf("unknown region location = %q, want us-east-1 fallback", got)
+	// An unknown non-empty region must NOT silently fall back to us-east-1;
+	// it must surface an error so a wrong-region price is never produced.
+	if _, err := awsLocation("xx-nowhere-9"); err == nil {
+		t.Fatal("awsLocation(unknown) = nil error, want error (regression: unknown region must not silently price us-east-1)")
 	}
-	if got := awsLocation(""); got != awsRegionToLocation["us-east-1"] {
+	// An empty region defaults to us-east-1 with no error.
+	got, err := awsLocation("")
+	if err != nil {
+		t.Fatalf("awsLocation(\"\") error = %v, want nil", err)
+	}
+	if got != awsRegionToLocation["us-east-1"] {
 		t.Fatalf("empty region location = %q, want us-east-1 fallback", got)
 	}
 }
@@ -182,7 +189,11 @@ func TestAWSLocationNewerRegions(t *testing.T) {
 		"ca-west-1":      "Canada West (Calgary)",
 	}
 	for region, want := range cases {
-		if got := awsLocation(region); got != want {
+		got, err := awsLocation(region)
+		if err != nil {
+			t.Errorf("awsLocation(%q) error = %v, want nil", region, err)
+		}
+		if got != want {
 			t.Errorf("awsLocation(%q) = %q, want %q", region, got, want)
 		}
 	}

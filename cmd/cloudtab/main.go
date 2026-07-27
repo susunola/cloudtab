@@ -35,6 +35,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/susunola/cloudtab/internal/logger"
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
 	"github.com/susunola/cloudtab/internal/pricing"
@@ -82,6 +83,7 @@ func main() {
 		maxRetries  int
 		failOnError bool
 		cacheTTL    time.Duration
+		debug       bool
 	)
 	breakdown := &cobra.Command{
 		Use:           "breakdown",
@@ -90,6 +92,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			logger.SetDebug(debug)
 			if format != "table" && format != "json" {
 				return fmt.Errorf("unknown format %q (want table or json)", format)
 			}
@@ -125,6 +128,7 @@ func main() {
 	breakdown.Flags().IntVar(&maxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
 	breakdown.Flags().BoolVar(&failOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
 	breakdown.Flags().DurationVar(&cacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
+	breakdown.Flags().BoolVar(&debug, "debug", false, "Emit diagnostic logs to stderr (cache hits/misses, per-call backend latency, retries)")
 
 	// -- diff --
 	var (
@@ -145,6 +149,7 @@ func main() {
 		diffMaxRetries  int
 		diffFailOnError bool
 		diffCacheTTL    time.Duration
+		diffDebug       bool
 	)
 	diff := &cobra.Command{
 		Use:           "diff",
@@ -153,6 +158,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			logger.SetDebug(diffDebug)
 			if diffFmt != "table" && diffFmt != "json" && diffFmt != "markdown" {
 				return fmt.Errorf("unknown format %q (want table, json or markdown)", diffFmt)
 			}
@@ -200,6 +206,7 @@ func main() {
 	diff.Flags().IntVar(&diffMaxRetries, "max-retries", 0, "Retries on transient/rate-limit errors (default 2; negative disables)")
 	diff.Flags().BoolVar(&diffFailOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
 	diff.Flags().DurationVar(&diffCacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
+	diff.Flags().BoolVar(&diffDebug, "debug", false, "Emit diagnostic logs to stderr (cache hits/misses, per-call backend latency, retries)")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 

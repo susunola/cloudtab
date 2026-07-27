@@ -22,12 +22,16 @@ import (
 
 // awsClusterInstanceRequest builds the shared Database-Instance price request
 // used by DocumentDB and Neptune member instances.
-func awsClusterInstanceRequest(serviceCode, region, instanceType string) pricing.PriceRequest {
+func awsClusterInstanceRequest(serviceCode, region, instanceType string) (pricing.PriceRequest, error) {
+	loc, err := awsLocation(region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	return awsPriceRequest(serviceCode, region,
 		awsFilter("instanceType", instanceType),
-		awsFilter("location", awsLocation(region)),
+		awsFilter("location", loc),
 		awsFilter("productFamily", "Database Instance"),
-	)
+	), nil
 }
 
 // awsClusterInstanceComponent turns the pinned hourly rate into one monthly
@@ -45,7 +49,7 @@ func (AWSDocDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest,
 	if instanceType == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("aws_docdb_cluster_instance: missing instance_class")
 	}
-	return awsClusterInstanceRequest("AmazonDocDB", r.Region, instanceType), nil
+	return awsClusterInstanceRequest("AmazonDocDB", r.Region, instanceType)
 }
 
 func (AWSDocDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
@@ -60,7 +64,7 @@ func (AWSNeptuneInstance) Extract(r parser.PlannedResource) (pricing.PriceReques
 	if instanceType == "" {
 		return pricing.PriceRequest{}, fmt.Errorf("aws_neptune_cluster_instance: missing instance_class")
 	}
-	return awsClusterInstanceRequest("AmazonNeptune", r.Region, instanceType), nil
+	return awsClusterInstanceRequest("AmazonNeptune", r.Region, instanceType)
 }
 
 func (AWSNeptuneInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {

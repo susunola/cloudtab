@@ -7,6 +7,11 @@ package resources
 // throughput provisioning here (gp3/io2 extras) — those depend on provisioned
 // values that, while present in the plan, are a smaller second-order cost; the
 // component name notes the volume type so the base storage figure is clear.
+//
+// The Price List returns several EBS SKUs for one filter set (per-GB storage,
+// per-IOPS, per-throughput). Parse pins the storage line by matching the
+// product "usagetype" on "EBS:VolumeUsage" so a gp3/io2 volume is never priced
+// off the wrong IOPS/throughput dimension.
 
 import (
 	"fmt"
@@ -28,9 +33,13 @@ func (AWSEBSVolume) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 	if size <= 0 {
 		return pricing.PriceRequest{}, fmt.Errorf("aws_ebs_volume: missing or zero size")
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonEC2", r.Region,
 		awsFilter("volumeApiName", volType),
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("productFamily", "Storage"),
 	)
 	// Stash the provisioned size so Parse can multiply the per-GB-month unit
@@ -42,7 +51,9 @@ func (AWSEBSVolume) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 }
 
 func (AWSEBSVolume) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	price, err := parseAWSPriceList(raw)
+	// Pin the storage line (usagetype "...EBS:VolumeUsage..."); IOPS/throughput
+	// dimensions must be excluded so gp3/io2 volumes price off storage only.
+	price, err := parseAWSPriceListMatching(raw, "EBS:VolumeUsage")
 	if err != nil {
 		return nil, err
 	}

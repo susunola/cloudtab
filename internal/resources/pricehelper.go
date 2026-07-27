@@ -3,11 +3,25 @@ package resources
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/susunola/cloudtab/internal/output"
 )
 
 // hoursPerMonth is the conventional Tencent Cloud billing month (30.4 days).
 // Tencent's own console uses ~730h for POSTPAID monthly estimates.
 const hoursPerMonth = 730.0
+
+// simpleHourlyCost wraps a single hourly rate into the one-component slice
+// most Huawei/Alibaba mappers return. Monthly is derived as hourly × hoursPerMonth.
+func simpleHourlyCost(name string, hourly float64, currency string) []output.CostComponent {
+	return []output.CostComponent{{
+		Name:        name,
+		Unit:        "HOUR",
+		HourlyCost:  hourly,
+		MonthlyCost: hourly * hoursPerMonth,
+		Currency:    currency,
+	}}
+}
 
 // monthlyFromPrice converts an InquiryPrice* discounted price into a monthly
 // figure, deciding PREPAID vs POSTPAID from the official ChargeUnit field

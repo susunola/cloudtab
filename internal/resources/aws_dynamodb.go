@@ -44,8 +44,12 @@ func (AWSDynamoDBTable) Extract(r parser.PlannedResource) (pricing.PriceRequest,
 	// One request carries both capacities; Parse issues nothing further because
 	// both RCU and WCU SKUs come back from the same DynamoDB product query when
 	// filtered by group. We filter broadly and match usagetype in Parse.
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonDynamoDB", r.Region,
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("groupDescription", "DynamoDB Provisioned"),
 	)
 	req.Params["RCU"] = rcu

@@ -77,7 +77,9 @@ func (a *cnHuaweiBSSAdapter) ListOnDemandResourceRatings(in *model.ListOnDemandR
 	cnIn := &bssmodel.ListOnDemandResourceRatingsRequest{Body: &cnBody}
 	cnOut, err := a.client.ListOnDemandResourceRatings(cnIn)
 	if err != nil {
-		return nil, fmt.Errorf("huawei ListOnDemandResourceRatings %s: %w", "", err)
+		// No product label here: the adapter has no PriceRequest in scope, and
+		// the caller (query) already wraps this error with req.Product.
+		return nil, fmt.Errorf("huawei cn adapter: %w", err)
 	}
 	outBytes, err := json.Marshal(cnOut)
 	if err != nil {

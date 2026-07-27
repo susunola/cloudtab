@@ -78,7 +78,7 @@ func TestAWSEBSVolumeParse(t *testing.T) {
 	// $0.08 per GB-month * 100 GB = $8.00/month.
 	raw := []byte(`[
 		{
-			"product": {"attributes": {"volumeApiName": "gp3"}},
+			"product": {"attributes": {"volumeApiName": "gp3", "usagetype": "EBS:VolumeUsage.gp3"}},
 			"terms": {"OnDemand": {"X": {"priceDimensions": {"X.1": {
 				"unit": "GB-Mo",
 				"pricePerUnit": {"USD": "0.0800000000"}
@@ -107,5 +107,48 @@ func TestAWSEBSVolumeParse(t *testing.T) {
 	}
 	if c.Unit != "GB-MONTH" {
 		t.Fatalf("Unit = %q, want GB-MONTH", c.Unit)
+	}
+}
+
+// TestAWSEBSVolumeParsePinsStorageSKU guards against EBS picking the wrong
+// dimension. The Price List can return an IOPS/throughput line BEFORE the
+// storage line; Parse must pin the storage usagetype ("EBS:VolumeUsage") so a
+// gp3 volume is priced off storage only, never the per-IOPS rate.
+func TestAWSEBSVolumeParsePinsStorageSKU(t *testing.T) {
+	// Two SKUs, IOPS-first: the naive "first positive price" would pick 0.005
+	// and multiply by size. We must instead pick the storage line (0.08).
+	raw := []byte(`[
+		{
+			"product": {"attributes": {"usagetype": "EBS:VolumeIOPS.piops"}},
+			"terms": {"OnDemand": {"A": {"priceDimensions": {"A.1": {
+				"unit": "IOPS-Mo",
+				"pricePerUnit": {"USD": "0.005"}
+			}}}}}
+		},
+		{
+			"product": {"attributes": {"usagetype": "EBS:VolumeUsage.gp3"}},
+			"terms": {"OnDemand": {"B": {"priceDimensions": {"B.1": {
+				"unit": "GB-Mo",
+				"pricePerUnit": {"USD": "0.08"}
+			}}}}}
+		}
+	]`)
+
+	// Stash the provisioned size the way Extract does.
+	req := awsPriceRequest("AmazonEC2", "us-east-1",
+		awsFilter("volumeApiName", "gp3"),
+		awsFilter("productFamily", "Storage"),
+	)
+	req.Params["Quantity"] = int64(100)
+
+	comps, err := AWSEBSVolume{}.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(comps) != 1 {
+		t.Fatalf("components = %d, want 1", len(comps))
+	}
+	if !almostEqAWS(comps[0].MonthlyCost, 8.0) {
+		t.Fatalf("MonthlyCost = %v, want 8.0 (0.08 * 100 GB)", comps[0].MonthlyCost)
 	}
 }

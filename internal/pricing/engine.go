@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -29,6 +28,8 @@ import (
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcErrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+
+	"github.com/susunola/cloudtab/internal/logger"
 )
 
 type Config struct {
@@ -396,7 +397,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 			// Cache is an optimization, not a correctness requirement. If another
 			// process holds the lock or the path is unusable, degrade gracefully
 			// to an uncached engine rather than failing the whole cost run.
-			fmt.Fprintf(os.Stderr, "cloudtab: warning: price cache disabled (%v); running without cache\n", err)
+			logger.Warn("price cache disabled; running without cache", "err", err)
 			return e, nil
 		}
 		e.cache = c
@@ -427,6 +428,7 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 	provider := req.provider()
 	siteKey := e.siteKeyForProvider(provider)
 	if reason, ok := e.unavailableReason(provider, req.Product, siteKey); ok {
+		logger.Debug("skipping known-unavailable product", "provider", provider, "product", req.Product, "site", siteKey)
 		return nil, fmt.Errorf("product %q unavailable on %s site: %s", req.Product, siteKey, reason)
 	}
 
@@ -440,8 +442,10 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 
 	if e.cache != nil && keyed {
 		if hit, ok := e.cache.Get(key); ok {
+			logger.Debug("price cache hit", "provider", provider, "product", req.Product, "action", req.Action)
 			return hit, nil
 		}
+		logger.Debug("price cache miss", "provider", provider, "product", req.Product, "action", req.Action)
 	}
 
 	// Without a usable key we cannot safely de-duplicate or cache; just run.
@@ -526,16 +530,20 @@ func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 	backoff := retryBaseBackoff
 	var lastErr error
 	for i := 0; i < attempts; i++ {
+		start := time.Now()
 		resp, err := e.dispatch(req)
 		if err == nil {
+			logger.Debug("backend call ok", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String())
 			return resp, nil
 		}
 		lastErr = err
 		if i == attempts-1 || !isRetryable(err) {
+			logger.Debug("backend call failed", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String(), "retryable", isRetryable(err), "err", err)
 			break
 		}
 		// Jittered exponential backoff: wait backoff/2 + rand(backoff/2).
 		jitter := backoff/2 + time.Duration(rand.Int63n(int64(backoff/2)))
+		logger.Debug("backend call retrying", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String(), "backoff", jitter.Round(time.Millisecond).String(), "err", err)
 		timer := time.NewTimer(jitter)
 		select {
 		case <-ctx.Done():
@@ -597,11 +605,11 @@ func (e *Engine) dispatch(req PriceRequest) ([]byte, error) {
 // unknown SKU, unsupported product/action) is a deterministic failure that a
 // retry cannot fix, so it returns false and fails fast.
 //
-// Tencent Cloud surfaces API errors as strings via sdkResult ("tencent api
-// <Code>: <Message>"); AWS SDK errors carry throttling/timeout signatures in
-// their text too. Matching on well-known substrings keeps this dependency-free
-// and works across both backends without importing either SDK's error types
-// here.
+// Tencent Cloud surfaces API errors via sdkResult ("tencent api <Code>: ..."
+// wrapping the SDK error, whose text carries Code/Message/RequestId); AWS SDK
+// errors carry throttling/timeout signatures in their text too. Matching on
+// well-known substrings keeps this dependency-free and works across both
+// backends without importing either SDK's error types here.
 func isRetryable(err error) bool {
 	if err == nil {
 		return false
@@ -901,7 +909,10 @@ func sdkResult(out jsonStringer, err error) ([]byte, error) {
 	if err != nil {
 		var apiErr *tcErrors.TencentCloudSDKError
 		if errors.As(err, &apiErr) {
-			return nil, fmt.Errorf("tencent api %s: %s", apiErr.GetCode(), apiErr.GetMessage())
+			// Wrap (%w) rather than reformat so callers can errors.As the
+			// original SDK error back out; its text carries Code, Message and
+			// RequestId (useful when filing a ticket against a quote failure).
+			return nil, fmt.Errorf("tencent api %s: %w", apiErr.GetCode(), apiErr)
 		}
 		return nil, err
 	}

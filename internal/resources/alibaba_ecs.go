@@ -56,11 +56,5 @@ func (AlibabaECS) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Alibaba ECS",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+	return simpleHourlyCost("Alibaba ECS", info.PriceYuan, info.Currency), nil
 }

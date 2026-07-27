@@ -35,13 +35,7 @@ func (AlibabaRedis) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCo
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Alibaba Redis",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+	return simpleHourlyCost("Alibaba Redis", info.PriceYuan, info.Currency), nil
 }
 
 // AlibabaMongoDB handles `alicloud_mongodb_instance` (ApsaraDB for MongoDB).
@@ -75,11 +69,5 @@ func (AlibabaMongoDB) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 	if err != nil {
 		return nil, err
 	}
-	return []output.CostComponent{{
-		Name:        "Alibaba MongoDB",
-		Unit:        "HOUR",
-		HourlyCost:  info.PriceYuan,
-		MonthlyCost: info.PriceYuan * hoursPerMonth,
-		Currency:    info.Currency,
-	}}, nil
+	return simpleHourlyCost("Alibaba MongoDB", info.PriceYuan, info.Currency), nil
 }

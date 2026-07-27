@@ -32,9 +32,13 @@ func (AWSElastiCacheCluster) Extract(r parser.PlannedResource) (pricing.PriceReq
 	if nodes <= 0 {
 		nodes = 1 // Terraform defaults num_cache_nodes to 1
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonElastiCache", r.Region,
 		awsFilter("instanceType", nodeType),
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("cacheEngine", engine),
 		awsFilter("productFamily", "Cache Instance"),
 	)

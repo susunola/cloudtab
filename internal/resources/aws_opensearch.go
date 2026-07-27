@@ -36,9 +36,13 @@ func (AWSOpenSearchDomain) Extract(r parser.PlannedResource) (pricing.PriceReque
 	if count <= 0 {
 		count = 1 // Terraform defaults instance_count to 1
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	req := awsPriceRequest("AmazonES", r.Region,
 		awsFilter("instanceType", instanceType),
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 	)
 	req.Params["Quantity"] = count
 	return req, nil

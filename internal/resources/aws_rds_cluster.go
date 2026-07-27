@@ -34,9 +34,13 @@ func (AWSRDSClusterInstance) Extract(r parser.PlannedResource) (pricing.PriceReq
 	if dbEngine == "" {
 		dbEngine = "Aurora MySQL"
 	}
+	loc, err := awsLocation(r.Region)
+	if err != nil {
+		return pricing.PriceRequest{}, err
+	}
 	return awsPriceRequest("AmazonRDS", r.Region,
 		awsFilter("instanceType", instanceType),
-		awsFilter("location", awsLocation(r.Region)),
+		awsFilter("location", loc),
 		awsFilter("databaseEngine", dbEngine),
 		awsFilter("deploymentOption", "Single-AZ"),
 		awsFilter("productFamily", "Database Instance"),
