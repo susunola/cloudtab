@@ -57,7 +57,7 @@ func isPrepaid(req pricing.PriceRequest) bool {
 			}
 		}
 	}
-	for _, key := range []string{"InstanceChargeType", "InstanceChargePrepaid", "ChargePrepaid", "ChargeType", "InstanceChargeTypePrepaidPeriod", "InternetChargeType"} {
+	for _, key := range []string{"InstanceChargeType", "InstanceChargePrepaid", "ChargePrepaid", "ChargeType", "InstanceChargeTypePrepaidPeriod", "InternetChargeType", "InstancePayMode"} {
 		if v, ok := req.Params[key]; ok {
 			s := ""
 			switch vv := v.(type) {

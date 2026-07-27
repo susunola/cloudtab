@@ -815,7 +815,7 @@ func TestCynosDBPostpaidHourly(t *testing.T) {
 			"available_zone": "ap-guangzhou-3",
 			"cpu":            2,
 			"memory":         4,
-			"charge_type":    "POSTPAID",
+			"charge_type":    "POSTPAID_BY_HOUR",
 		},
 	}
 	req, err := m.Extract(r)
@@ -836,6 +836,100 @@ func TestCynosDBPostpaidHourly(t *testing.T) {
 	}
 	if comps[0].MonthlyCost != 1.0*hoursPerMonth {
 		t.Errorf("Cynos monthly = %v, want %v", comps[0].MonthlyCost, 1.0*hoursPerMonth)
+	}
+}
+
+// TestCynosDBServerless verifies SERVERLESS pay mode: uses db_mode=SERVERLESS
+// with min_cpu/max_cpu (mapped to API's Ccu), and computes hourly cost from
+// UnitPriceDiscount.
+func TestCynosDBServerless(t *testing.T) {
+	m := CynosDBCluster{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_cynosdb_cluster",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"db_mode":        "SERVERLESS",
+			"min_cpu":        1,
+			"max_cpu":        2,
+			"charge_type":    "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Cynos Extract: %v", err)
+	}
+	if req.Params["InstancePayMode"] != "SERVERLESS" {
+		t.Fatalf("InstancePayMode = %v, want SERVERLESS", req.Params["InstancePayMode"])
+	}
+	if ccu, ok := req.Params["Ccu"].(int64); !ok || ccu != 2 {
+		t.Errorf("Ccu = %v, want int64(2) (from max_cpu)", req.Params["Ccu"])
+	}
+	if _, ok := req.Params["Cpu"]; ok {
+		t.Error("Cpu should not be set for SERVERLESS")
+	}
+	// SERVERLESS is POSTPAID: UnitPriceDiscount is hourly rate (cents).
+	// Instance 50 cents/h = 0.5 元/h; storage GB*h 350 cents = 3.5 元/GB·h.
+	raw := []byte(`{"Response":{"InstancePrice":{"UnitPrice":60,"UnitPriceDiscount":50,"ChargeUnit":"HOUR"},"StoragePrice":{"UnitPrice":350,"UnitPriceDiscount":350,"ChargeUnit":"GB*h"}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Cynos Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("Cynos components = %d, want 2", len(comps))
+	}
+	// Instance: 50 cents/h = 0.5 元/hour.
+	if comps[0].HourlyCost != 0.5 {
+		t.Errorf("Cynos SERVERLESS instance hourly = %v, want 0.5", comps[0].HourlyCost)
+	}
+	if comps[0].MonthlyCost != 0.5*hoursPerMonth {
+		t.Errorf("Cynos SERVERLESS instance monthly = %v, want %v", comps[0].MonthlyCost, 0.5*hoursPerMonth)
+	}
+	// Storage: GB*h rate only (no monthly/hourly estimate without volume).
+	if comps[1].Unit != "GB*H" {
+		t.Errorf("Cynos storage unit = %q, want GB*H", comps[1].Unit)
+	}
+	if comps[1].HourlyCost != 0 || comps[1].MonthlyCost != 0 {
+		t.Errorf("Cynos storage GB*h should have zero hourly/monthly, got %v/%v",
+			comps[1].HourlyCost, comps[1].MonthlyCost)
+	}
+}
+
+// TestCynosDBPostpaidStorageGBh verifies that POSTPAID storage with ChargeUnit
+// "GB*h" is shown as a rate only (per-GB-per-hour), without estimating monthly.
+func TestCynosDBPostpaidStorageGBh(t *testing.T) {
+	m := CynosDBCluster{}
+	r := parser.PlannedResource{
+		Type:   "tencentcloud_cynosdb_cluster",
+		Region: "ap-guangzhou",
+		After: map[string]interface{}{
+			"available_zone": "ap-guangzhou-3",
+			"cpu":            2,
+			"memory":         4,
+			"storage_limit":  100,
+			"charge_type":    "POSTPAID_BY_HOUR",
+		},
+	}
+	req, err := m.Extract(r)
+	if err != nil {
+		t.Fatalf("Cynos Extract: %v", err)
+	}
+	// Instance POSTPAID hourly + Storage POSTPAID GB*h.
+	raw := []byte(`{"Response":{"InstancePrice":{"UnitPrice":120,"UnitPriceDiscount":100,"ChargeUnit":"HOUR"},"StoragePrice":{"UnitPrice":350,"UnitPriceDiscount":350,"ChargeUnit":"GB*h"}}}`)
+	comps, err := m.Parse(req, raw)
+	if err != nil {
+		t.Fatalf("Cynos Parse: %v", err)
+	}
+	if len(comps) != 2 {
+		t.Fatalf("Cynos components = %d, want 2", len(comps))
+	}
+	// Instance: 100 cents/h = 1.0 元/hour.
+	if comps[0].HourlyCost != 1.0 {
+		t.Errorf("Cynos instance hourly = %v, want 1.0", comps[0].HourlyCost)
+	}
+	// Storage: GB*h rate only.
+	if comps[1].Unit != "GB*H" {
+		t.Errorf("Cynos storage unit = %q, want GB*H", comps[1].Unit)
 	}
 }
 
@@ -881,7 +975,7 @@ func TestPrepaidPricesSingleMonth(t *testing.T) {
 			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
 			"charge_type": "PREPAID", "period": 36}}},
 		{"cynosdb", parser.PlannedResource{Type: "tencentcloud_cynosdb_cluster", Region: "ap-guangzhou", After: map[string]interface{}{
-			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4, "storage_limit": 100,
 			"charge_type": "PREPAID", "prepaid_period": 24}}},
 		{"lighthouse", parser.PlannedResource{Type: "tencentcloud_lighthouse_instance", Region: "ap-guangzhou", After: map[string]interface{}{
 			"bundle_id": "bundle_xxx", "instance_count": 1}}},

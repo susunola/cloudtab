@@ -101,7 +101,7 @@ func TestTencentMapperRequestBodies(t *testing.T) {
 			"mariadb", "DescribePrice", map[string]interface{}{
 				"Paymode": "prepaid", "Period": 1, "AmountUnit": "pent"}, false},
 		{"cynosdb", CynosDBCluster{}, parser.PlannedResource{Type: "tencentcloud_cynosdb_cluster", Region: "ap-guangzhou", After: map[string]interface{}{
-			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4, "storage_limit": 100,
 			"charge_type": "PREPAID", "prepaid_period": 24}},
 			"cynosdb", "InquirePriceCreate", map[string]interface{}{
 				"InstancePayMode": "PREPAID", "TimeSpan": 1, "TimeUnit": "m"}, false},
