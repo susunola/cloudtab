@@ -10,15 +10,21 @@ import (
 	"github.com/susunola/cloudtab/internal/pricing"
 )
 
-// DCDBInstance handles `tencentcloud_dcdb_instance` (TDSQL MySQL, distributed).
+// DCDBInstance handles `tencentcloud_dcdb_db_instance` (TDSQL MySQL, PREPAID)
+// and `tencentcloud_dcdb_hourdb_instance` (POSTPAID).
 //
 // Pricing API (dcdb): DescribeDCDBPrice.
-// Docs: https://cloud.tencent.com/document/api/557/16135
+// Docs: https://cloud.tencent.com/document/product/557/16131
+//
+// The TF provider does not have a "charge_type" field — the billing mode is
+// determined by the resource type itself:
+//   - tencentcloud_dcdb_db_instance   → prepaid  (has "period" field)
+//   - tencentcloud_dcdb_hourdb_instance → postpaid (no period field)
 //
 // We request AmountUnit="pent" so Response.{OriginalPrice,Price} come back as
-// int64 cents (value/100 = CNY). Paymode is the lowercase "prepaid"/"postpaid".
-// For PREPAID the value is the total for the requested Period; for POSTPAID it
-// is an hourly rate. cloudtab always prices a single month (Period=1).
+// int64 cents (value/100 = CNY). For PREPAID the value is the total for the
+// requested Period (cloudtab forces Period=1 → monthly); for POSTPAID it is
+// an hourly rate.
 type DCDBInstance struct{}
 
 func (DCDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
@@ -33,7 +39,7 @@ func (DCDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 	shardStorage := getInt(r.After, "shard_storage")
 	shardCount := getInt(r.After, "shard_count")
 	if zone == "" || shardMemory <= 0 || shardStorage <= 0 || shardCount <= 0 {
-		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_dcdb_instance requires availability_zone/shard_memory/shard_storage/shard_count")
+		return pricing.PriceRequest{}, fmt.Errorf("tencentcloud_dcdb requires zones/shard_memory/shard_storage/shard_count")
 	}
 
 	shardNodeCount := getInt(r.After, "shard_node_count")
@@ -45,14 +51,13 @@ func (DCDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 		count = 1
 	}
 
-	// Terraform stores charge type as PREPAID / POSTPAID (or *_BY_HOUR); the DCDB
-	// API expects the lowercase "prepaid" / "postpaid".
+	// Billing mode is determined by the TF resource type:
+	//   tencentcloud_dcdb_db_instance    → prepaid
+	//   tencentcloud_dcdb_hourdb_instance → postpaid
 	payMode := "postpaid"
-	ct := strings.ToUpper(strings.TrimSpace(getStr(r.After, "instance_charge_type")))
-	if ct == "" {
-		ct = strings.ToUpper(strings.TrimSpace(getStr(r.After, "charge_type")))
-	}
-	if strings.HasPrefix(ct, "PREPAID") {
+	if strings.Contains(r.Type, "hourdb") {
+		payMode = "postpaid"
+	} else {
 		payMode = "prepaid"
 	}
 
@@ -65,9 +70,10 @@ func (DCDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, err
 		"ShardCount":     shardCount,
 		"Paymode":        payMode,
 		"AmountUnit":     "pent", // return price in cents for a stable integer unit
-		// Always price a single month; cloudtab reports a monthly run-rate.
-		"Period": 1,
 	}
+	// Period is required by the API for both modes; cloudtab always prices a
+	// single month (Period=1 → monthly run-rate).
+	params["Period"] = 1
 
 	return pricing.PriceRequest{
 		Product: "dcdb",

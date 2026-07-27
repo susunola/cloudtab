@@ -171,11 +171,9 @@ var handlers = map[string]productHandler{
 				out, err := client.(*vpc.Client).InquiryPriceCreateVpnGateway(in)
 				return sdkResult(out, err)
 			},
-			// Direct Connect Gateway pricing: SDK typed method expects int64 but API
-			// returns float (e.g. TotalCost=0.1), so use CommonRequest to avoid
-			// unmarshal errors.
-			"InquirePriceCreateDirectConnectGateway": func(client interface{}, params map[string]interface{}) ([]byte, error) {
-				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquirePriceCreateDirectConnectGateway")
+			// EIP pricing: SDK has AllocateAddresses but no InquiryPriceAllocateAddresses.
+			"InquiryPriceAllocateAddresses": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquiryPriceAllocateAddresses")
 				if err := req.SetActionParameters(params); err != nil {
 					return nil, err
 				}
@@ -185,9 +183,11 @@ var handlers = map[string]productHandler{
 				}
 				return resp.GetBody(), nil
 			},
-			// EIP pricing: SDK has AllocateAddresses but no InquiryPriceAllocateAddresses.
-			"InquiryPriceAllocateAddresses": func(client interface{}, params map[string]interface{}) ([]byte, error) {
-				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquiryPriceAllocateAddresses")
+			// Direct Connect Gateway pricing: SDK typed method expects int64 but API
+			// returns float (e.g. TotalCost=0.1), so use CommonRequest to avoid
+			// unmarshal errors.
+			"InquirePriceCreateDirectConnectGateway": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquirePriceCreateDirectConnectGateway")
 				if err := req.SetActionParameters(params); err != nil {
 					return nil, err
 				}

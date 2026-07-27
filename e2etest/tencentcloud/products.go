@@ -13,7 +13,11 @@ import (
 type TestCase struct {
 	Name         string // directory name, e.g. "cvm"
 	ResourceType string // Terraform type, e.g. "tencentcloud_instance"
-	Validator    Validator
+	// ResourcePrefix, when non-empty, matches any resource whose type starts
+	// with this prefix (used for DCDB where PREPAID and POSTPAID use different
+	// resource types: tencentcloud_dcdb_db_instance / tencentcloud_dcdb_hourdb_instance).
+	ResourcePrefix string
+	Validator      Validator
 }
 
 // allTestCases returns all 19 Tencent Cloud product test cases.
@@ -34,7 +38,7 @@ func allTestCases() []TestCase {
 		{Name: "lighthouse", ResourceType: "tencentcloud_lighthouse_instance", Validator: lighthouseValidator{}},
 		{Name: "ecm", ResourceType: "tencentcloud_ecm_instance", Validator: ecmValidator{}},
 		{Name: "sqlserver", ResourceType: "tencentcloud_sqlserver_instance", Validator: cdbFenValidator{}},
-		{Name: "dcdb", ResourceType: "tencentcloud_dcdb_instance", Validator: cdbFenValidator{}},
+		{Name: "dcdb", ResourceType: "", ResourcePrefix: "tencentcloud_dcdb_", Validator: cdbFenValidator{}},
 		{Name: "gaap", ResourceType: "tencentcloud_gaap_proxy", Validator: gaapValidator{}},
 		{Name: "cwp", ResourceType: "tencentcloud_cwp_license_order", Validator: cwpValidator{}},
 		{Name: "cloudhsm", ResourceType: "tencentcloud_cloudhsm_instance", Validator: cloudhsmValidator{}},
@@ -57,7 +61,7 @@ func isPrepaid(req pricing.PriceRequest) bool {
 			}
 		}
 	}
-	for _, key := range []string{"InstanceChargeType", "InstanceChargePrepaid", "ChargePrepaid", "ChargeType", "InstanceChargeTypePrepaidPeriod", "InternetChargeType"} {
+	for _, key := range []string{"InstanceChargeType", "InstanceChargePrepaid", "ChargePrepaid", "ChargeType", "InstanceChargeTypePrepaidPeriod", "InternetChargeType", "InstancePayMode"} {
 		if v, ok := req.Params[key]; ok {
 			s := ""
 			switch vv := v.(type) {

@@ -101,7 +101,7 @@ func TestTencentMapperRequestBodies(t *testing.T) {
 			"mariadb", "DescribePrice", map[string]interface{}{
 				"Paymode": "prepaid", "Period": 1, "AmountUnit": "pent"}, false},
 		{"cynosdb", CynosDBCluster{}, parser.PlannedResource{Type: "tencentcloud_cynosdb_cluster", Region: "ap-guangzhou", After: map[string]interface{}{
-			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4,
+			"available_zone": "ap-guangzhou-3", "cpu": 2, "memory": 4, "storage_limit": 100,
 			"charge_type": "PREPAID", "prepaid_period": 24}},
 			"cynosdb", "InquirePriceCreate", map[string]interface{}{
 				"InstancePayMode": "PREPAID", "TimeSpan": 1, "TimeUnit": "m"}, false},
@@ -117,9 +117,8 @@ func TestTencentMapperRequestBodies(t *testing.T) {
 			"charge_type": "PREPAID", "prepaid_period": 12}},
 			"sqlserver", "InquiryPriceCreateDBInstances", map[string]interface{}{
 				"InstanceChargeType": "PREPAID", "Period": 1}, false},
-		{"dcdb", DCDBInstance{}, parser.PlannedResource{Type: "tencentcloud_dcdb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200, "shard_count": 2,
-			"instance_charge_type": "PREPAID"}},
+		{"dcdb", DCDBInstance{}, parser.PlannedResource{Type: "tencentcloud_dcdb_db_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"zones": []interface{}{"ap-guangzhou-3"}, "shard_memory": 8, "shard_storage": 200, "shard_count": 2}},
 			"dcdb", "DescribeDCDBPrice", map[string]interface{}{
 				"Paymode": "prepaid", "Period": 1, "AmountUnit": "pent"}, false},
 		{"gaap", GAAPProxy{}, parser.PlannedResource{Type: "tencentcloud_gaap_proxy", Region: "ap-guangzhou", After: map[string]interface{}{

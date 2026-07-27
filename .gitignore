@@ -12,3 +12,10 @@ push.sh
 .workbuddy/
 .idea/
 .vscode/
+
+# e2etest generated artifacts (terraform lock, plan, price & report outputs)
+e2etest/tencentcloud/*/.terraform.lock.hcl
+e2etest/tencentcloud/*/cloudtab_price.json
+e2etest/tencentcloud/*/raw_price.json
+e2etest/tencentcloud/*/report.md
+e2etest/tencentcloud/*/tf.plan
