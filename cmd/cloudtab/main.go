@@ -110,6 +110,7 @@ func main() {
 			if err != nil {
 				return err
 			}
+			logRunSummary(engine, &rep)
 			return output.Render(os.Stdout, rep, format)
 		},
 	}
@@ -186,6 +187,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("after: %w", err)
 			}
+			logRunSummary(engine, &b, &a)
 			return output.RenderDiff(os.Stdout, output.ComputeDiff(b, a), diffFmt)
 		},
 	}
@@ -425,6 +427,29 @@ func clearCache(path string) error {
 // workers (every worker blocked writing to the full error channel while nobody
 // was reading). A live collector removes that failure mode entirely regardless
 // of how many resources error.
+// logRunSummary prints a one-line, human-readable summary of the run to stderr
+// (report output on stdout is untouched). It is always shown — unlike the
+// per-call --debug diagnostics — so a user can see how much work a run did
+// (SKUs priced, cache hits, total backend time) without opting into the noise.
+// reps are the report(s) produced this run: one for breakdown, two for diff.
+func logRunSummary(engine *pricing.Engine, reps ...*output.Report) {
+	s := engine.Stats()
+	var priced, skipped int
+	for _, r := range reps {
+		if r == nil {
+			continue
+		}
+		priced += len(r.Resources)
+		skipped += len(r.Skipped)
+	}
+	logger.Summary(fmt.Sprintf(
+		"cloudtab: %d resources priced, %d skipped | backend calls: %d (%s), cache hits: %d, misses: %d",
+		priced, skipped,
+		s.BackendCalls, s.BackendTime.Round(time.Millisecond),
+		s.CacheHits, s.CacheMisses,
+	))
+}
+
 func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
 	var rep output.Report
 	plan, err := parser.LoadPlanJSON(path)

@@ -178,6 +178,37 @@ func TestDispatchWithRetryDoesNotRetryPermanentError(t *testing.T) {
 	}
 }
 
+// TestStatsCountsBackendCallsAndRetries asserts the run counters exposed via
+// Engine.Stats() track every backend attempt (including retries) and that a
+// successful run records a positive backend time. This guards the --debug-free
+// end-of-run summary: an under- or over-count would silently misreport how much
+// work a run did.
+func TestStatsCountsBackendCallsAndRetries(t *testing.T) {
+	b := &countingBackend{
+		failN:    2, // two transient failures, success on the 3rd attempt
+		failWith: errors.New("ThrottlingException: slow down"),
+		resp:     []byte(`["ok"]`),
+	}
+	e := engineWithBackend(Config{MaxRetries: 2}, b)
+
+	if _, err := e.dispatchWithRetry(awsReq()); err != nil {
+		t.Fatalf("expected success after retries, got %v", err)
+	}
+
+	s := e.Stats()
+	if s.BackendCalls != 3 {
+		t.Fatalf("Stats().BackendCalls = %d, want 3 (1 + 2 retries)", s.BackendCalls)
+	}
+	if s.BackendTime < 0 {
+		t.Fatalf("Stats().BackendTime = %v, want >= 0", s.BackendTime)
+	}
+	// dispatchWithRetry does not touch the cache directly, so both cache
+	// counters must stay zero here.
+	if s.CacheHits != 0 || s.CacheMisses != 0 {
+		t.Fatalf("Stats() cache counters = (%d,%d), want (0,0)", s.CacheHits, s.CacheMisses)
+	}
+}
+
 func TestInflightDedupCollapsesConcurrentIdenticalRequests(t *testing.T) {
 	b := &countingBackend{
 		resp: []byte(`["shared"]`),

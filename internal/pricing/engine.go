@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -375,6 +376,40 @@ type Engine struct {
 	// in golang.org/x/sync to preserve the zero-dependency-drift invariant).
 	flightMu sync.Mutex
 	flight   map[string]*inflightCall
+
+	// stats accumulates run-level counters (cache hits/misses, backend calls,
+	// total backend latency) so the CLI can print a one-line summary at the end
+	// of a run without requiring --debug. The fields are touched from many
+	// pricing goroutines, so they are updated atomically.
+	stats engineStats
+}
+
+// engineStats holds atomically-updated run counters. Read a consistent
+// snapshot via Engine.Stats().
+type engineStats struct {
+	cacheHits    atomic.Int64
+	cacheMisses  atomic.Int64
+	backendCalls atomic.Int64
+	backendNanos atomic.Int64
+}
+
+// Stats is an immutable snapshot of the engine's run counters.
+type Stats struct {
+	CacheHits    int64
+	CacheMisses  int64
+	BackendCalls int64
+	BackendTime  time.Duration
+}
+
+// Stats returns a snapshot of the run counters accumulated so far. Safe to call
+// concurrently and after Close.
+func (e *Engine) Stats() Stats {
+	return Stats{
+		CacheHits:    e.stats.cacheHits.Load(),
+		CacheMisses:  e.stats.cacheMisses.Load(),
+		BackendCalls: e.stats.backendCalls.Load(),
+		BackendTime:  time.Duration(e.stats.backendNanos.Load()),
+	}
 }
 
 // inflightCall is a single de-duplicated request in progress. Waiters block on
@@ -442,9 +477,11 @@ func (e *Engine) Query(req PriceRequest) ([]byte, error) {
 
 	if e.cache != nil && keyed {
 		if hit, ok := e.cache.Get(key); ok {
+			e.stats.cacheHits.Add(1)
 			logger.Debug("price cache hit", "provider", provider, "product", req.Product, "action", req.Action)
 			return hit, nil
 		}
+		e.stats.cacheMisses.Add(1)
 		logger.Debug("price cache miss", "provider", provider, "product", req.Product, "action", req.Action)
 	}
 
@@ -532,18 +569,21 @@ func (e *Engine) dispatchWithRetry(req PriceRequest) ([]byte, error) {
 	for i := 0; i < attempts; i++ {
 		start := time.Now()
 		resp, err := e.dispatch(req)
+		elapsed := time.Since(start)
+		e.stats.backendCalls.Add(1)
+		e.stats.backendNanos.Add(int64(elapsed))
 		if err == nil {
-			logger.Debug("backend call ok", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String())
+			logger.Debug("backend call ok", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", elapsed.Round(time.Millisecond).String())
 			return resp, nil
 		}
 		lastErr = err
 		if i == attempts-1 || !isRetryable(err) {
-			logger.Debug("backend call failed", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String(), "retryable", isRetryable(err), "err", err)
+			logger.Debug("backend call failed", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", elapsed.Round(time.Millisecond).String(), "retryable", isRetryable(err), "err", err)
 			break
 		}
 		// Jittered exponential backoff: wait backoff/2 + rand(backoff/2).
 		jitter := backoff/2 + time.Duration(rand.Int63n(int64(backoff/2)))
-		logger.Debug("backend call retrying", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", time.Since(start).Round(time.Millisecond).String(), "backoff", jitter.Round(time.Millisecond).String(), "err", err)
+		logger.Debug("backend call retrying", "provider", req.provider(), "product", req.Product, "action", req.Action, "attempt", i+1, "latency", elapsed.Round(time.Millisecond).String(), "backoff", jitter.Round(time.Millisecond).String(), "err", err)
 		timer := time.NewTimer(jitter)
 		select {
 		case <-ctx.Done():

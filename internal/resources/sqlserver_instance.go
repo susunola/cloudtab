@@ -67,7 +67,7 @@ func (SQLServerInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest
 	if t := getStr(r.After, "instance_type"); t != "" {
 		params["InstanceType"] = t
 	} else {
-		// Default to SI (单节点/single-node). The HA (双机高可用) architecture
+		// Default to SI (single-node). The HA (dual-machine high-availability) architecture
 		// is sold out in most zones; SI is the widely sellable option confirmed
 		// via DescribeSpecSellStatus.
 		params["InstanceType"] = "SI"
@@ -76,7 +76,7 @@ func (SQLServerInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest
 		params["MachineType"] = m
 	} else {
 		// SI (single-node) instances require an explicit MachineType. Default to
-		// CLOUD_BSSD (通用型SSD云盘), the standard cloud-disk option shown in the
+		// CLOUD_BSSD (general-purpose SSD cloud disk), the standard cloud-disk option shown in the
 		// Tencent Cloud console for single-node SQL Server.
 		params["MachineType"] = "CLOUD_BSSD"
 	}

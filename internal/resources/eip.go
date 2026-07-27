@@ -18,7 +18,7 @@ import (
 // The SDK has no typed method for this action; the handler uses CommonRequest
 // (see handlers.go "vpc" → "InquiryPriceAllocateAddresses").
 //
-// Response (元):
+// Response (CNY):
 //   - POSTPAID (TRAFFIC/BANDWIDTH_POSTPAID_BY_HOUR):
 //     Price.AddressPrice.{UnitPrice, DiscountPrice, ChargeUnit="HOUR"}
 //   - PREPAID (BANDWIDTH_PREPAID_BY_MONTH):

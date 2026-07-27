@@ -14,21 +14,21 @@ import (
 // Pricing API (postgres): InquiryPriceCreateDBInstances.
 // Docs: https://cloud.tencent.com/document/product/409/16777
 //
-// The API supports both PREPAID (包年包月) and POSTPAID (按量计费, 按小时).
+// The API supports both PREPAID (prepaid) and POSTPAID (pay-as-you-go, hourly).
 // Note: the API enum is "POSTPAID" (NOT "POSTPAID_BY_HOUR"); the TF provider
 // uses "POSTPAID_BY_HOUR", so we normalize it before sending.
 //
 // Response is a simplified top-level structure (not ItemPrice):
-//   - OriginalPrice/Price are in 分 (cents); Price is the discounted total.
-//   - PREPAID: Price is the period (Period=1 → monthly) total in 分.
-//   - POSTPAID: Price is the hourly rate in 分.
+//   - OriginalPrice/Price are in cents; Price is the discounted total.
+//   - PREPAID: Price is the period (Period=1 → monthly) total in cents.
+//   - POSTPAID: Price is the hourly rate in cents.
 //
 // Terraform provider fields commonly seen:
 // - availability_zone, spec_code, storage, instance_charge_type, prepaid_period
 // - cpu, memory (used to derive SpecCode when spec_code is absent)
 type PostgreSQLInstance struct{}
 
-// pgSpec describes one sellable PostgreSQL "通用型" class.
+// pgSpec describes one sellable PostgreSQL "general-purpose" class.
 type pgSpec struct {
 	cpu, mem int64 // cpu cores, memory in GB
 	spec     string
@@ -104,7 +104,7 @@ func (PostgreSQLInstance) Extract(r parser.PlannedResource) (pricing.PriceReques
 	// The TF provider exposes cpu/memory (in GB) but not the pricing SpecCode.
 	// Derive the real, sellable SpecCode (format pg.it.*, confirmed via
 	// DescribeClasses) from cpu+memory. The legacy "cdb.pg.z1.{mem}g" format no
-	// longer exists and triggers "参数Zone State检查失败" on InquiryPrice.
+	// longer exists and triggers a "parameter Zone State check failed" error on InquiryPrice.
 	if specCode == "" {
 		specCode = pgSpecCode(getInt(r.After, "cpu"), getInt(r.After, "memory"))
 	}
@@ -161,7 +161,7 @@ func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 	monthly := priceYuan
 	hourly := 0.0
 
-	// POSTPAID: Price is the hourly rate in 分; convert to 元/hour and ×730.
+	// POSTPAID: Price is the hourly rate in cents; convert to CNY/hour and x730.
 	// PREPAID: Price is already a monthly total (cloudtab forces Period=1).
 	if chargeType == "POSTPAID" {
 		hourly = priceYuan

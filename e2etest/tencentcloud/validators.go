@@ -50,7 +50,7 @@ func almostEq(a, b float64) bool { return abs(a-b) < tolerance }
 func checkPreZero(name string, apiVal float64) *CheckResult {
 	if apiVal == 0 {
 		return &CheckResult{
-			Name:     name + " (>0 前置检查)",
+			Name:     name + " (>0 precondition)",
 			APIValue: 0,
 			Status:   "SUSPICIOUS",
 			Formula:  "API price is 0 — possible Response wrapper parse bug",
@@ -81,7 +81,7 @@ func compareVal(name string, api, got float64, formula string) CheckResult {
 // Validator 1: cvmClbValidator — CVM, CLB
 // Mirrors: CVMInstance.Parse / CLBInstance.Parse
 // Path: Response.Price.InstancePrice.{UnitPrice, UnitPriceDiscount, DiscountPrice, ChargeUnit}
-// Unit: 元
+// Unit: CNY
 // ============================================================
 
 type cvmClbValidator struct{}
@@ -122,12 +122,12 @@ func (v cvmClbValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
+		results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+			results = append(results, compareVal("monthly = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
 		}
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
+			results = append(results, compareVal("hourly = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
 		}
 	} else {
 		apiHourly := ip.UnitPriceDiscount
@@ -135,11 +135,11 @@ func (v cvmClbValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.4f", apiHourly)))
+		results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.4f", apiHourly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = UnitPriceDiscount", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
+			results = append(results, compareVal("hourly = UnitPriceDiscount", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
 			wantMonthly := apiHourly * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 		}
 	}
 	return results
@@ -149,7 +149,7 @@ func (v cvmClbValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 // Validator 2: cbsValidator — CBS
 // Mirrors: CBSStorage.Parse
 // Path: Response.DiskPrice.{UnitPrice, UnitPriceDiscount, DiscountPrice, ChargeUnit}
-// Unit: 元
+// Unit: CNY
 // ============================================================
 
 type cbsValidator struct{}
@@ -183,11 +183,11 @@ func (v cbsValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.4f", apiHourly)))
+	results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.4f", apiHourly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("小时费 = UnitPriceDiscount", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
+		results = append(results, compareVal("hourly = UnitPriceDiscount", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
 		wantMonthly := apiHourly * hoursPerMonth
-		results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+		results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 	}
 	return results
 }
@@ -195,13 +195,13 @@ func (v cbsValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // ============================================================
 // Validator 3: cdbFenValidator — MySQL, PostgreSQL, MariaDB, SQLServer, DCDB, CWP, CloudHSM
 // Mirrors: respective Parse functions (all use parseTencentPrice: Response.{Price, OriginalPrice})
-// Unit: 分 (÷100 → 元)
+// Unit: cents (/100 -> CNY)
 // ============================================================
 
 type cdbFenValidator struct{}
 
 func (v cdbFenValidator) Validate(req pricing.PriceRequest, raw []byte, comps []output.CostComponent) []CheckResult {
-	// parseTencentPrice: Response.{Price, OriginalPrice} in 分
+	// parseTencentPrice: Response.{Price, OriginalPrice} in cents
 	var wrap struct {
 		Price    float64 `json:"Price"`
 		Original float64 `json:"OriginalPrice"`
@@ -228,22 +228,22 @@ func (v cdbFenValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 	prepaid := isPrepaid(req)
 	var results []CheckResult
 
-	if susp := checkPreZero("Price (分)", price); susp != nil {
+	if susp := checkPreZero("Price (cents)", price); susp != nil {
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", price, 0, fmt.Sprintf("Price=%.0f分 → %.2f元", price, priceYuan)))
+	results = append(results, passCheck("API price > 0 precondition", price, 0, fmt.Sprintf("Price=%.0fcents -> %.2fCNY", price, priceYuan)))
 
 	if prepaid {
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = Price/100", priceYuan, comps[0].MonthlyCost, fmt.Sprintf("%.0f/100=%.2f", price, priceYuan)))
-			results = append(results, compareVal("小时费 = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
+			results = append(results, compareVal("monthly = Price/100", priceYuan, comps[0].MonthlyCost, fmt.Sprintf("%.0f/100=%.2f", price, priceYuan)))
+			results = append(results, compareVal("hourly = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
 		}
 	} else {
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = Price/100", priceYuan, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", price, priceYuan)))
+			results = append(results, compareVal("hourly = Price/100", priceYuan, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", price, priceYuan)))
 			wantMonthly := priceYuan * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", priceYuan, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", priceYuan, wantMonthly)))
 		}
 	}
 	return results
@@ -253,7 +253,7 @@ func (v cdbFenValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 // Validator 4: redisValidator — Redis
 // Mirrors: RedisInstance.Parse
 // Path: Response.{Price, HighPrecisionPrice, AmountUnit}
-// Unit: 分/微分 (normalizeTencentAmount)
+// Unit: cents/micro-cents (normalizeTencentAmount)
 // ============================================================
 
 type redisValidator struct{}
@@ -284,8 +284,8 @@ func (v redisValidator) Validate(req pricing.PriceRequest, raw []byte, comps []o
 	}
 
 	// Use the same normalizeTencentAmount logic as the mapper:
-	// The Redis API returns Price in 分 by default (no AmountUnit in response),
-	// so default to "pent" → /100, matching RedisInstance.Parse.
+	// The Redis API returns Price in cents by default (no AmountUnit in response),
+	// so default to "pent" -> /100, matching RedisInstance.Parse.
 	if strings.TrimSpace(unit) == "" {
 		unit = "pent"
 	}
@@ -293,7 +293,7 @@ func (v redisValidator) Validate(req pricing.PriceRequest, raw []byte, comps []o
 	if rawPrice == 0 {
 		rawPrice = price
 	}
-	priceYuan := rawPrice // default: already in 元
+	priceYuan := rawPrice // default: already in CNY
 	switch strings.ToLower(strings.TrimSpace(unit)) {
 	case "pent":
 		priceYuan = rawPrice / 100.0
@@ -307,17 +307,17 @@ func (v redisValidator) Validate(req pricing.PriceRequest, raw []byte, comps []o
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", priceYuan, 0, fmt.Sprintf("priceYuan=%.4f", priceYuan)))
+	results = append(results, passCheck("API price > 0 precondition", priceYuan, 0, fmt.Sprintf("priceYuan=%.4f", priceYuan)))
 
 	if prepaid {
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = priceYuan", priceYuan, comps[0].MonthlyCost, fmt.Sprintf("%.4f", priceYuan)))
+			results = append(results, compareVal("monthly = priceYuan", priceYuan, comps[0].MonthlyCost, fmt.Sprintf("%.4f", priceYuan)))
 		}
 	} else {
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = priceYuan", priceYuan, comps[0].HourlyCost, fmt.Sprintf("%.4f", priceYuan)))
+			results = append(results, compareVal("hourly = priceYuan", priceYuan, comps[0].HourlyCost, fmt.Sprintf("%.4f", priceYuan)))
 			wantMonthly := priceYuan * hoursPerMonth
-			results = append(results, compareVal("月费 = priceYuan×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", priceYuan, wantMonthly)))
+			results = append(results, compareVal("monthly = priceYuanx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", priceYuan, wantMonthly)))
 		}
 	}
 	return results
@@ -327,7 +327,7 @@ func (v redisValidator) Validate(req pricing.PriceRequest, raw []byte, comps []o
 // Validator 5: mongodbValidator — MongoDB
 // Mirrors: MongoDBInstance.Parse
 // Path: Response.Price.{UnitPrice, OriginalPrice, DiscountPrice}
-// Unit: 元 (POSTPAID uses UnitPrice, PREPAID uses DiscountPrice)
+// Unit: CNY (POSTPAID uses UnitPrice, PREPAID uses DiscountPrice)
 // ============================================================
 
 type mongodbValidator struct{}
@@ -364,9 +364,9 @@ func (v mongodbValidator) Validate(req pricing.PriceRequest, raw []byte, comps [
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
+		results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+			results = append(results, compareVal("monthly = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
 		}
 	} else {
 		apiHourly := p.UnitPrice
@@ -374,11 +374,11 @@ func (v mongodbValidator) Validate(req pricing.PriceRequest, raw []byte, comps [
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("UnitPrice=%.4f", apiHourly)))
+		results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("UnitPrice=%.4f", apiHourly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = UnitPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
+			results = append(results, compareVal("hourly = UnitPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
 			wantMonthly := apiHourly * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 		}
 	}
 	return results
@@ -388,7 +388,7 @@ func (v mongodbValidator) Validate(req pricing.PriceRequest, raw []byte, comps [
 // Validator 6: cynosdbValidator — CynosDB (TDSQL-C)
 // Mirrors: CynosDBCluster.Parse
 // Path: Response.{InstancePrice, StoragePrice}.{UnitPriceDiscount, TotalPriceDiscount}
-// Unit: 分 (int64, ÷100 → 元)
+// Unit: cents (int64, /100 -> CNY)
 // Note: Two components (compute + storage)
 // ============================================================
 
@@ -428,24 +428,24 @@ func (v cynosdbValidator) Validate(req pricing.PriceRequest, raw []byte, comps [
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("Instance+Storage=%.0f分→%.2f元", ip.TotalPriceDiscount+sp.TotalPriceDiscount, apiMonthly)))
+		results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("Instance+Storage=%.0fcents->%.2fCNY", ip.TotalPriceDiscount+sp.TotalPriceDiscount, apiMonthly)))
 		// Sum all components' monthly
 		var totalMonthly float64
 		for _, c := range comps {
 			totalMonthly += c.MonthlyCost
 		}
-		results = append(results, compareVal("月费 = (Instance+Storage)/100", apiMonthly, totalMonthly, fmt.Sprintf("(%.0f+%.0f)/100=%.2f", ip.TotalPriceDiscount, sp.TotalPriceDiscount, apiMonthly)))
+		results = append(results, compareVal("monthly = (Instance+Storage)/100", apiMonthly, totalMonthly, fmt.Sprintf("(%.0f+%.0f)/100=%.2f", ip.TotalPriceDiscount, sp.TotalPriceDiscount, apiMonthly)))
 	} else {
 		apiHourly := ip.UnitPriceDiscount / 100.0
 		if susp := checkPreZero("UnitPriceDiscount", apiHourly); susp != nil {
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.0f分→%.4f元", ip.UnitPriceDiscount, apiHourly)))
+		results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("UnitPriceDiscount=%.0fcents->%.4fCNY", ip.UnitPriceDiscount, apiHourly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = UnitPriceDiscount/100", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", ip.UnitPriceDiscount, apiHourly)))
+			results = append(results, compareVal("hourly = UnitPriceDiscount/100", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", ip.UnitPriceDiscount, apiHourly)))
 			wantMonthly := apiHourly * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 		}
 	}
 	return results
@@ -455,7 +455,7 @@ func (v cynosdbValidator) Validate(req pricing.PriceRequest, raw []byte, comps [
 // Validator 7: lighthouseValidator — Lighthouse
 // Mirrors: LighthouseInstance.Parse
 // Path: Response.Price.InstancePrice.{DiscountPrice, OriginalPrice}
-// Unit: 元 (PREPAID only, monthly total)
+// Unit: CNY (PREPAID only, monthly total)
 // ============================================================
 
 type lighthouseValidator struct{}
@@ -493,10 +493,10 @@ func (v lighthouseValidator) Validate(req pricing.PriceRequest, raw []byte, comp
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
+	results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
-		results = append(results, compareVal("小时费 = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
+		results = append(results, compareVal("monthly = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+		results = append(results, compareVal("hourly = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
 	}
 	return results
 }
@@ -505,7 +505,7 @@ func (v lighthouseValidator) Validate(req pricing.PriceRequest, raw []byte, comp
 // Validator 8: ecmValidator — ECM
 // Mirrors: ECMInstance.Parse
 // Path: Response.InstancePrice.{DiscountPrice, OriginalPrice}
-// Unit: 分 (uint64, ÷100 → 元), POSTPAID only
+// Unit: cents (uint64, /100 -> CNY), POSTPAID only
 // ============================================================
 
 type ecmValidator struct{}
@@ -539,11 +539,11 @@ func (v ecmValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.0f分→%.4f元", ip.DiscountPrice, apiHourly)))
+	results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.0fcents->%.4fCNY", ip.DiscountPrice, apiHourly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("小时费 = DiscountPrice/100", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", ip.DiscountPrice, apiHourly)))
+		results = append(results, compareVal("hourly = DiscountPrice/100", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.0f/100=%.4f", ip.DiscountPrice, apiHourly)))
 		wantMonthly := apiHourly * hoursPerMonth
-		results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+		results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 	}
 	return results
 }
@@ -552,7 +552,7 @@ func (v ecmValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // Validator 9: gaapValidator — GAAP
 // Mirrors: GAAPProxy.Parse
 // Path: Response.{ProxyDailyPrice, DiscountProxyDailyPrice}
-// Unit: 元/天 (× daysPerMonth → 元/月)
+// Unit: CNY/day (x daysPerMonth -> CNY/month)
 // ============================================================
 
 type gaapValidator struct{}
@@ -586,9 +586,9 @@ func (v gaapValidator) Validate(req pricing.PriceRequest, raw []byte, comps []ou
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", daily, 0, fmt.Sprintf("daily=%.4f→monthly=%.2f", daily, apiMonthly)))
+	results = append(results, passCheck("API price > 0 precondition", daily, 0, fmt.Sprintf("daily=%.4f->monthly=%.2f", daily, apiMonthly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = dailyPrice×daysPerMonth", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×%.1f=%.2f", daily, daysPerMonth, apiMonthly)))
+		results = append(results, compareVal("monthly = dailyPricexdaysPerMonth", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx%.1f=%.2f", daily, daysPerMonth, apiMonthly)))
 	}
 	return results
 }
@@ -597,7 +597,7 @@ func (v gaapValidator) Validate(req pricing.PriceRequest, raw []byte, comps []ou
 // Validator 10: vpnValidator — VPN Gateway
 // Mirrors: VPNGateway.Parse
 // Path: Response.Price.{InstancePrice, BandwidthPrice}.{UnitPrice, DiscountPrice, ChargeUnit}
-// Unit: 元 (POSTPAID uses UnitPrice — NOT UnitPriceDiscount!)
+// Unit: CNY (POSTPAID uses UnitPrice — NOT UnitPriceDiscount!)
 // ============================================================
 
 type vpnValidator struct{}
@@ -641,9 +641,9 @@ func (v vpnValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
+		results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+			results = append(results, compareVal("monthly = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
 		}
 	} else {
 		// POSTPAID: use DiscountPrice (actual cost), fall back to UnitPrice.
@@ -655,11 +655,11 @@ func (v vpnValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.4f", apiHourly)))
+		results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.4f", apiHourly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = DiscountPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
+			results = append(results, compareVal("hourly = DiscountPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
 			wantMonthly := apiHourly * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 		}
 	}
 	return results
@@ -669,7 +669,7 @@ func (v vpnValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // Validator 12: eipValidator — EIP
 // Mirrors: EIP.Parse
 // Path: Response.Price.AddressPrice.{UnitPrice, DiscountPrice, OriginalPrice, ChargeUnit}
-// Unit: 元 (POSTPAID: HOUR rate; PREPAID: total for period)
+// Unit: CNY (POSTPAID: HOUR rate; PREPAID: total for period)
 // ============================================================
 
 type eipValidator struct{}
@@ -714,9 +714,9 @@ func (v eipValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
+		results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f", apiMonthly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("月费 = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+			results = append(results, compareVal("monthly = DiscountPrice", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
 		}
 	} else {
 		apiHourly := ap.DiscountPrice
@@ -727,11 +727,11 @@ func (v eipValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 			results = append(results, *susp)
 			return results
 		}
-		results = append(results, passCheck("API 价格 > 0 前置检查", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.4f", apiHourly)))
+		results = append(results, passCheck("API price > 0 precondition", apiHourly, 0, fmt.Sprintf("DiscountPrice=%.4f", apiHourly)))
 		if len(comps) > 0 {
-			results = append(results, compareVal("小时费 = DiscountPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
+			results = append(results, compareVal("hourly = DiscountPrice", apiHourly, comps[0].HourlyCost, fmt.Sprintf("%.4f", apiHourly)))
 			wantMonthly := apiHourly * hoursPerMonth
-			results = append(results, compareVal("月费 = 小时费×730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f×730=%.2f", apiHourly, wantMonthly)))
+			results = append(results, compareVal("monthly = hourlyx730", wantMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4fx730=%.2f", apiHourly, wantMonthly)))
 		}
 	}
 	return results
@@ -741,7 +741,7 @@ func (v eipValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // Validator: dcgValidator — Direct Connect Gateway
 // Mirrors: DirectConnectGateway.Parse
 // Path: Response.{TotalCost, RealTotalCost}
-// Unit: 元 (int64, always PREPAID monthly, no hourly)
+// Unit: CNY (int64, always PREPAID monthly, no hourly)
 // ============================================================
 
 type dcgValidator struct{}
@@ -776,9 +776,9 @@ func (v dcgValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("RealTotalCost=%.4f元", cost)))
+	results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("RealTotalCost=%.4fCNY", cost)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = RealTotalCost", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f", cost)))
+		results = append(results, compareVal("monthly = RealTotalCost", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.4f", cost)))
 	}
 	return results
 }
@@ -787,7 +787,7 @@ func (v dcgValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // Validator 12: cwpValidator — CWP (YunjingLicense)
 // Mirrors: YunjingLicense.Parse
 // Path: Response.{OriginalPrice, DiscountPrice}
-// Unit: 元 (NOT 分! No ÷100 conversion)
+// Unit: CNY (NOT cents! No /100 conversion)
 // Always PREPAID (monthly license, no hourly)
 // ============================================================
 
@@ -812,7 +812,7 @@ func (v cwpValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 		pb = wrap.Response.priceBlock
 	}
 
-	// preferDiscount: use DiscountPrice if > 0, else OriginalPrice. Values are 元.
+	// preferDiscount: use DiscountPrice if > 0, else OriginalPrice. Values are CNY.
 	apiMonthly := pb.DiscountPrice
 	if apiMonthly == 0 {
 		apiMonthly = pb.OriginalPrice
@@ -823,10 +823,10 @@ func (v cwpValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2f元", apiMonthly)))
+	results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("DiscountPrice=%.2fCNY", apiMonthly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = preferDiscount(元)", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
-		results = append(results, compareVal("小时费 = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
+		results = append(results, compareVal("monthly = preferDiscount(CNY)", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+		results = append(results, compareVal("hourly = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
 	}
 	return results
 }
@@ -835,7 +835,7 @@ func (v cwpValidator) Validate(req pricing.PriceRequest, raw []byte, comps []out
 // Validator 13: cloudhsmValidator — CloudHSM
 // Mirrors: CloudHSMInstance.Parse
 // Path: Response.{TotalCost, OriginalCost}
-// Unit: 元 (NOT 分! No ÷100 conversion)
+// Unit: CNY (NOT cents! No /100 conversion)
 // Always PREPAID (monthly, no hourly)
 // Note: Field names are TotalCost/OriginalCost, NOT Price/OriginalPrice
 // ============================================================
@@ -873,10 +873,10 @@ func (v cloudhsmValidator) Validate(req pricing.PriceRequest, raw []byte, comps 
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", apiMonthly, 0, fmt.Sprintf("TotalCost=%.2f元", apiMonthly)))
+	results = append(results, passCheck("API price > 0 precondition", apiMonthly, 0, fmt.Sprintf("TotalCost=%.2fCNY", apiMonthly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = TotalCost(元)", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
-		results = append(results, compareVal("小时费 = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
+		results = append(results, compareVal("monthly = TotalCost(CNY)", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f", apiMonthly)))
+		results = append(results, compareVal("hourly = 0 (PREPAID)", 0, comps[0].HourlyCost, "PREPAID no hourly"))
 	}
 	return results
 }
@@ -885,7 +885,7 @@ func (v cloudhsmValidator) Validate(req pricing.PriceRequest, raw []byte, comps 
 // Validator 12: domainValidator — Domain Registration
 // Mirrors: DomainRegistration.Parse
 // Path: Response.PriceList[].{RealPrice, ...}
-// Unit: 元/年 (÷12 → 元/月)
+// Unit: CNY/year (/12 -> CNY/month)
 // ============================================================
 
 type domainValidator struct{}
@@ -911,7 +911,7 @@ func (v domainValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 
 	var results []CheckResult
 	if len(pl) == 0 {
-		results = append(results, failCheck("PriceList 非空", 1, 0, "empty PriceList"))
+		results = append(results, failCheck("PriceList non-empty", 1, 0, "empty PriceList"))
 		return results
 	}
 	yearly := pl[0].RealPrice
@@ -924,9 +924,9 @@ func (v domainValidator) Validate(req pricing.PriceRequest, raw []byte, comps []
 		results = append(results, *susp)
 		return results
 	}
-	results = append(results, passCheck("API 价格 > 0 前置检查", yearly, 0, fmt.Sprintf("RealPrice=%.2f/年→%.2f/月", yearly, apiMonthly)))
+	results = append(results, passCheck("API price > 0 precondition", yearly, 0, fmt.Sprintf("RealPrice=%.2f/year->%.2f/month", yearly, apiMonthly)))
 	if len(comps) > 0 {
-		results = append(results, compareVal("月费 = RealPrice/12", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f/12=%.2f", yearly, apiMonthly)))
+		results = append(results, compareVal("monthly = RealPrice/12", apiMonthly, comps[0].MonthlyCost, fmt.Sprintf("%.2f/12=%.2f", yearly, apiMonthly)))
 	}
 	return results
 }

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -162,6 +163,12 @@ type alibabaModulePrice struct {
 // omits its currency field, expectedCurrency is used (intl Alibaba quotes in
 // USD) so the price is labelled correctly instead of silently assumed CNY; an
 // explicit API currency always wins over expectedCurrency.
+//
+// A response that yields no positive price (empty ModuleDetails, or a
+// business-level failure returned with HTTP 200) is an ERROR, not a zero-cost
+// component: fabricating a confident "free" for a paid resource is exactly the
+// anti-fabrication hazard the AWS truncation guard also protects against. The
+// engine surfaces this as a skipped resource with a note rather than a bogus 0.
 func parseAlibabaPrice(raw []byte, expectedCurrency string) (alibabaPriceInfo, error) {
 	modules, currency, err := parseAlibabaModules(raw, expectedCurrency)
 	if err != nil {
@@ -170,6 +177,9 @@ func parseAlibabaPrice(raw []byte, expectedCurrency string) (alibabaPriceInfo, e
 	var total float64
 	for _, m := range modules {
 		total += m.CostYuan
+	}
+	if total <= 0 {
+		return alibabaPriceInfo{}, fmt.Errorf("alibaba: price response carried no positive cost (empty ModuleDetails or a business-level failure); refusing to report a fabricated zero")
 	}
 	return alibabaPriceInfo{PriceYuan: total, Currency: currency}, nil
 }
@@ -228,6 +238,11 @@ type huaweiPriceInfo struct {
 // "official_website_amount". An explicit API currency always wins; when the
 // response omits it, expectedCurrency is used (intl Huawei quotes in USD) so
 // the price is labelled correctly instead of silently assumed CNY.
+//
+// A response that yields no positive amount (empty body, or a business-level
+// failure returned with HTTP 200) is an ERROR, not a zero-cost component — the
+// same anti-fabrication guard applied to parseAlibabaPrice. The engine surfaces
+// it as a skipped resource with a note rather than a fabricated free price.
 func parseHuaweiPrice(raw []byte, expectedCurrency string) (huaweiPriceInfo, error) {
 	var resp struct {
 		Amount                *float64 `json:"amount"`
@@ -243,6 +258,9 @@ func parseHuaweiPrice(raw []byte, expectedCurrency string) (huaweiPriceInfo, err
 	}
 	if amt <= 0 && resp.OfficialWebsiteAmount != nil {
 		amt = *resp.OfficialWebsiteAmount
+	}
+	if amt <= 0 {
+		return huaweiPriceInfo{}, fmt.Errorf("huawei: rating response carried no positive amount (empty body or a business-level failure); refusing to report a fabricated zero")
 	}
 	cur := "CNY"
 	if resp.Currency != nil && *resp.Currency != "" {

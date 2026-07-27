@@ -383,20 +383,20 @@ func printChecks(checks []CheckResult) {
 // generateReport writes the report.md for one product.
 func generateReport(dir string, tc TestCase, resList []parser.PlannedResource, rawRecs []rawPriceRecord, ctRecs []cloudtabPriceRecord, checks []CheckResult) {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("# %s 价格验证报告\n\n", strings.ToUpper(tc.Name)))
-	b.WriteString(fmt.Sprintf("> 生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05")))
-	b.WriteString(fmt.Sprintf("> 资源类型: %s\n\n", tc.ResourceType))
+	b.WriteString(fmt.Sprintf("# %s Price Verification Report\n\n", strings.ToUpper(tc.Name)))
+	b.WriteString(fmt.Sprintf("> Generated: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	b.WriteString(fmt.Sprintf("> Resource type: %s\n\n", tc.ResourceType))
 
 	// Test resources
-	b.WriteString("## 测试资源\n\n")
-	b.WriteString("| 资源地址 | 类型 |\n|---|---|\n")
+	b.WriteString("## Test resources\n\n")
+	b.WriteString("| Resource address | Type |\n|---|---|\n")
 	for _, r := range resList {
 		b.WriteString(fmt.Sprintf("| %s | %s |\n", r.Address, r.Type))
 	}
 
 	// API raw responses
 	if len(rawRecs) > 0 {
-		b.WriteString("\n## API 原始返回\n\n")
+		b.WriteString("\n## Raw API response\n\n")
 		for _, rec := range rawRecs {
 			b.WriteString(fmt.Sprintf("### %s\n\n", rec.ResourceAddress))
 			if rec.Error != "" {
@@ -416,8 +416,8 @@ func generateReport(dir string, tc TestCase, resList []parser.PlannedResource, r
 
 	// cloudtab results
 	if len(ctRecs) > 0 {
-		b.WriteString("## cloudtab 计算结果\n\n")
-		b.WriteString("| 资源 | 组件 | 小时费 | 月费 | 币种 |\n|---|---|---|---|---|\n")
+		b.WriteString("## cloudtab computed result\n\n")
+		b.WriteString("| Resource | Component | Hourly | Monthly | Currency |\n|---|---|---|---|---|\n")
 		for _, rec := range ctRecs {
 			for _, c := range rec.Components {
 				b.WriteString(fmt.Sprintf("| %s | %s | %.4f | %.2f | %s |\n", rec.Address, c.Name, c.HourlyCost, c.MonthlyCost, c.Currency))
@@ -427,8 +427,8 @@ func generateReport(dir string, tc TestCase, resList []parser.PlannedResource, r
 
 	// Validation checks
 	if len(checks) > 0 {
-		b.WriteString("\n## 验证\n\n")
-		b.WriteString("| 检查项 | API 值 | cloudtab 值 | 计算 | 结果 |\n|---|---|---|---|---|\n")
+		b.WriteString("\n## Verification\n\n")
+		b.WriteString("| Check | API value | cloudtab value | Calculation | Result |\n|---|---|---|---|---|\n")
 		for _, c := range checks {
 			emoji := "✅"
 			switch c.Status {
@@ -442,7 +442,7 @@ func generateReport(dir string, tc TestCase, resList []parser.PlannedResource, r
 	}
 
 	// Conclusion
-	b.WriteString("\n## 结论\n\n")
+	b.WriteString("\n## Conclusion\n\n")
 	hasFail, hasSusp := false, false
 	for _, c := range checks {
 		if c.Status == "FAIL" {
@@ -454,11 +454,11 @@ func generateReport(dir string, tc TestCase, resList []parser.PlannedResource, r
 	}
 	switch {
 	case hasFail:
-		b.WriteString("❌ 有检查项未通过 — 请检查 cloudtab 的 Parse 逻辑。\n")
+		b.WriteString("❌ Some checks failed — review cloudtab's Parse logic.\n")
 	case hasSusp:
-		b.WriteString("⚠️ 有可疑结果 (API 价格为 0) — 请检查 Response 包装层解析。\n")
+		b.WriteString("⚠️ Suspicious result (API price is 0) — check the Response-wrapper parsing.\n")
 	default:
-		b.WriteString("✅ 全部通过 — cloudtab 对 " + tc.Name + " 的价格查询和计算准确。\n")
+		b.WriteString("✅ All passed — cloudtab's price query and calculation for " + tc.Name + " are accurate.\n")
 	}
 
 	os.WriteFile(filepath.Join(dir, "report.md"), []byte(b.String()), 0644)

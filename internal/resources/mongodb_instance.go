@@ -17,7 +17,7 @@ import (
 // Docs: https://cloud.tencent.com/document/product/240/43666
 // Price data structure: https://cloud.tencent.com/document/api/240/38576#DBInstancePrice
 //
-// The API supports both PREPAID (包年包月) and POSTPAID_BY_HOUR (按量计费).
+// The API supports both PREPAID (prepaid) and POSTPAID_BY_HOUR (pay-as-you-go).
 // cloudtab reports a monthly run-rate, so PREPAID is always priced for a
 // single month (Period=1).
 //
@@ -86,8 +86,8 @@ func (MongoDBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, 
 		params["MongoVersion"] = "MONGO_40_WT"
 	}
 
-	// MachineCode: the API only accepts GE.LD.T1 (本地盘通用I型),
-	// GE.CD.T1 (云盘通用I型), HIO10G (高IO万兆型), or HCD (云盘版).
+	// MachineCode: the API only accepts GE.LD.T1 (local-disk general type I),
+	// GE.CD.T1 (cloud-disk general type I), HIO10G (high-IO 10-gigabit type), or HCD (cloud-disk edition).
 	// The TF provider still allows the legacy "HIO"; normalize it to HIO10G
 	// so InquirePrice does not reject it as an invalid machine type.
 	machine := strings.ToUpper(strings.TrimSpace(getStr(r.After, "machine_type")))

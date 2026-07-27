@@ -14,7 +14,7 @@ import (
 // Docs: https://cloud.tencent.com/document/api/215/50367
 //
 // The API takes no business parameters — the price is a flat monthly fee.
-// Response.{TotalCost, RealTotalCost} are int64 in 元 (always PREPAID monthly).
+// Response.{TotalCost, RealTotalCost} are int64 in CNY (always PREPAID monthly).
 type DirectConnectGateway struct{}
 
 func (DirectConnectGateway) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {

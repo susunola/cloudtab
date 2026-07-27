@@ -54,8 +54,8 @@ func runDiscover(products []string, region, zone string) {
 }
 
 // probePostgresPrice calls InquiryPriceCreateDBInstances across every zone in
-// the region to find where PostgreSQL is actually sellable. The "参数Zone State
-// 检查失败" error means the zone is closed for sale even though DescribeClasses
+// the region to find where PostgreSQL is actually sellable. The "parameter Zone State
+// check failed" error means the zone is closed for sale even though DescribeClasses
 // lists specs for it; only a live InquiryPrice call tells the truth.
 func probePostgresPrice(cred *common.Credential, region, zone string) {
 	cpf := profile.NewClientProfile()

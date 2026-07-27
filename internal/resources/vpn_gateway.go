@@ -15,17 +15,17 @@ import (
 // Pricing API (vpc): InquiryPriceCreateVpnGateway.
 // Docs: https://cloud.tencent.com/document/product/215/17512
 //
-// The API supports both PREPAID (包年包月) and POSTPAID_BY_HOUR (按量计费).
+// The API supports both PREPAID (prepaid) and POSTPAID_BY_HOUR (pay-as-you-go).
 // cloudtab reports a monthly run-rate, so PREPAID is always priced for a
 // single month (Period=1).
 //
 // Response.Price has two dimensions, each an ItemPrice:
 //   - InstancePrice: VPN gateway instance fee
-//   - POSTPAID_BY_HOUR: ChargeUnit="HOUR", UnitPrice/DiscountPrice = 元/hour
+//   - POSTPAID_BY_HOUR: ChargeUnit="HOUR", UnitPrice/DiscountPrice = CNY/hour
 //   - PREPAID:          ChargeUnit="" (empty, not "none" as docs suggest),
-//     DiscountPrice = period total 元 (Period=1 → monthly)
+//     DiscountPrice = period total CNY (Period=1 → monthly)
 //   - BandwidthPrice: public network fee
-//   - POSTPAID_BY_HOUR: ChargeUnit="GB", UnitPrice/DiscountPrice = 元/GB (by traffic)
+//   - POSTPAID_BY_HOUR: ChargeUnit="GB", UnitPrice/DiscountPrice = CNY/GB (by traffic)
 //   - PREPAID:          ChargeUnit="", all zero (included in instance)
 //
 // For "GB" (per-traffic) billing we cannot estimate a monthly cost without
@@ -137,23 +137,23 @@ func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 
 // vpnComponent builds a CostComponent from a VPN ItemPrice. Per the official
 // ItemPrice ChargeUnit semantics:
-//   - "HOUR" (POSTPAID instance): DiscountPrice is the discounted 元/hour rate
+//   - "HOUR" (POSTPAID instance): DiscountPrice is the discounted CNY/hour rate
 //     (UnitPrice is the undiscounted rate; UnitPriceDiscount is not returned
 //     by this API). Fall back to UnitPrice when DiscountPrice is 0.
-//   - "GB"   (POSTPAID bandwidth): 元/GB, traffic-based — cannot estimate a
+//   - "GB"   (POSTPAID bandwidth): CNY/GB, traffic-based — cannot estimate a
 //     monthly cost without traffic volume, so only the rate is shown.
 //   - "" (PREPAID, empty): DiscountPrice is the period (Period=1 → monthly) total;
 //     UnitPrice is 0, so monthlyFromPrice's default branch returns discountPrice.
 func vpnComponent(name string, p vpnItemPrice, currency string) output.CostComponent {
 	unit := strings.ToUpper(strings.TrimSpace(p.ChargeUnit))
 	if unit == "GB" {
-		// Per-traffic billing: UnitPrice/DiscountPrice is 元/GB.
+		// Per-traffic billing: UnitPrice/DiscountPrice is CNY/GB.
 		rate := p.DiscountPrice
 		if rate == 0 {
 			rate = p.UnitPrice
 		}
 		return output.CostComponent{
-			Name:        fmt.Sprintf("%s (%.4f 元/GB)", name, rate),
+			Name:        fmt.Sprintf("%s (%.4f CNY/GB)", name, rate),
 			Unit:        "GB",
 			HourlyCost:  0,
 			MonthlyCost: 0,
@@ -161,7 +161,7 @@ func vpnComponent(name string, p vpnItemPrice, currency string) output.CostCompo
 		}
 	}
 	if unit == "HOUR" {
-		// POSTPAID hourly: DiscountPrice is the discounted 元/hour rate
+		// POSTPAID hourly: DiscountPrice is the discounted CNY/hour rate
 		// (preferred over UnitPrice, the undiscounted rate).
 		hourly := p.DiscountPrice
 		if hourly == 0 {

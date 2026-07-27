@@ -18,8 +18,8 @@ import (
 // CLB pricing has up to three dimensions (see Price data structure:
 // https://cloud.tencent.com/document/api/214/30694#Price); any may be null:
 //   - Instance fee (LB itself, per hour or fixed monthly for prepaid)
-//   - Bandwidth/traffic fee (ChargeUnit "HOUR" = 元/h, "GB" = 元/GB by traffic)
-//   - LCU fee (LCU-style performance-guaranteed instances only, 元/h)
+//   - Bandwidth/traffic fee (ChargeUnit "HOUR" = CNY/h, "GB" = CNY/GB by traffic)
+//   - LCU fee (LCU-style performance-guaranteed instances only, CNY/h)
 type CLBInstance struct{}
 
 func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
@@ -71,7 +71,7 @@ func (CLBInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, erro
 
 // clbItemPrice mirrors the CLB ItemPrice data structure
 // (https://cloud.tencent.com/document/api/214/30694#ItemPrice).
-// Discount is informational only (e.g. 20.0 = 2折) and not used for arithmetic.
+// Discount is informational only (e.g. 20.0 = 20% off) and not used for arithmetic.
 type clbItemPrice struct {
 	UnitPrice         float64 `json:"UnitPrice"`
 	UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
@@ -144,17 +144,17 @@ func hasClbPriceData(p clbPriceBlock) bool {
 }
 
 // clbComponent builds a CostComponent from a CLB ItemPrice. Per the official
-// ItemPrice definition ChargeUnit is either "HOUR" (元/hour) or "GB"
-// (元/GB, traffic-based). For "GB" we cannot estimate a monthly cost without
+// ItemPrice definition ChargeUnit is either "HOUR" (CNY/hour) or "GB"
+// (CNY/GB, traffic-based). For "GB" we cannot estimate a monthly cost without
 // traffic volume, so only the rate is shown; for "HOUR" (and PREPAID totals
 // where ChargeUnit is empty) monthlyFromPrice does the conversion.
 func clbComponent(name string, p clbItemPrice, currency string) output.CostComponent {
 	unit := strings.ToUpper(strings.TrimSpace(p.ChargeUnit))
 	if unit == "GB" {
-		// Per-traffic billing: UnitPrice/UnitPriceDiscount is 元/GB.
+		// Per-traffic billing: UnitPrice/UnitPriceDiscount is CNY/GB.
 		rate := preferDiscount(p.UnitPriceDiscount, p.UnitPrice)
 		return output.CostComponent{
-			Name:        fmt.Sprintf("%s (%.4f 元/GB)", name, rate),
+			Name:        fmt.Sprintf("%s (%.4f CNY/GB)", name, rate),
 			Unit:        "GB",
 			HourlyCost:  0,
 			MonthlyCost: 0,

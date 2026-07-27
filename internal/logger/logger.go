@@ -10,6 +10,7 @@
 package logger
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 )
@@ -39,3 +40,16 @@ func Debug(msg string, args ...any) { std.Debug(msg, args...) }
 
 // Warn logs at WARN level; always visible.
 func Warn(msg string, args ...any) { std.Warn(msg, args...) }
+
+// Info logs at INFO level. INFO sits above the default WARN gate, so a plain
+// Info call is normally suppressed; the end-of-run summary uses Summary (below)
+// which writes to stderr unconditionally, independent of the level gate.
+func Info(msg string, args ...any) { std.Info(msg, args...) }
+
+// Summary writes a single, already-formatted human-readable line to stderr,
+// bypassing the slog level gate and its key=value formatting. It is used for
+// the end-of-run summary so the line is legible and always shown, while report
+// output on stdout stays untouched.
+func Summary(line string) {
+	fmt.Fprintln(os.Stderr, line)
+}

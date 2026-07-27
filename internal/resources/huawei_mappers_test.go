@@ -232,21 +232,14 @@ func TestHuaweiCCEParse(t *testing.T) {
 	}
 }
 
+// TestHuaweiParseNoData guards the anti-fabrication contract: a response that
+// carries no positive amount (here an empty body) must be an ERROR, not a
+// confidently-priced zero-cost component.
 func TestHuaweiParseNoData(t *testing.T) {
 	raw := []byte(`{}`)
-	comps, err := HuaweiECS{}.Parse(pricing.PriceRequest{}, raw)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if len(comps) != 1 {
-		t.Fatalf("components = %d, want 1", len(comps))
-	}
-	c := comps[0]
-	if c.HourlyCost != 0 {
-		t.Errorf("HourlyCost = %v, want 0 (no data)", c.HourlyCost)
-	}
-	if c.MonthlyCost != 0 {
-		t.Errorf("MonthlyCost = %v, want 0 (no data)", c.MonthlyCost)
+	_, err := HuaweiECS{}.Parse(pricing.PriceRequest{}, raw)
+	if err == nil {
+		t.Fatal("Parse({}) = nil error, want error (no positive amount must not be reported as a fabricated zero)")
 	}
 }
 

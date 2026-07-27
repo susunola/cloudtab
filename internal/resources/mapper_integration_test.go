@@ -42,7 +42,7 @@ func TestCVMExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("CVM returned 0 components")
 	}
-	// POSTPAID hourly 0.5元 → monthly 0.5×730.
+	// POSTPAID hourly 0.5 CNY -> monthly 0.5 x 730.
 	if comps[0].HourlyCost != 0.5 {
 		t.Errorf("CVM hourly = %v, want 0.5", comps[0].HourlyCost)
 	}
@@ -124,7 +124,7 @@ func TestCBSExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("CBS returned 0 components")
 	}
-	// POSTPAID hourly 0.1元 → monthly 0.1×730.
+	// POSTPAID hourly 0.1 CNY -> monthly 0.1 x 730.
 	if comps[0].HourlyCost != 0.1 {
 		t.Errorf("CBS hourly = %v, want 0.1", comps[0].HourlyCost)
 	}
@@ -175,7 +175,7 @@ func TestCLBLcuPrice(t *testing.T) {
 		Region:  "ap-beijing",
 		Params:  map[string]interface{}{"LoadBalancerType": "OPEN"},
 	}
-	// Instance 0.3元/h + LCU 0.05元/h; no bandwidth.
+	// Instance 0.3 CNY/h + LCU 0.05 CNY/h; no bandwidth.
 	raw := clbInquiryPriceFullResp(t, "HOUR", 0.3, 0, 0.05)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -205,7 +205,7 @@ func TestCLBLcuPrice(t *testing.T) {
 }
 
 // TestCLBBandwidthByTraffic verifies that a CLB response whose BandwidthPrice
-// has ChargeUnit "GB" (traffic-based billing, 元/GB) is shown as a rate only
+// has ChargeUnit "GB" (traffic-based billing, CNY/GB) is shown as a rate only
 // with zero monthly/hourly estimates (monthly cost depends on traffic volume,
 // which is not available from the plan).
 func TestCLBBandwidthByTraffic(t *testing.T) {
@@ -216,7 +216,7 @@ func TestCLBBandwidthByTraffic(t *testing.T) {
 		Region:  "ap-beijing",
 		Params:  map[string]interface{}{"LoadBalancerType": "OPEN"},
 	}
-	// Instance 0.2元/h (HOUR) + bandwidth 0.8元/GB (GB).
+	// Instance 0.2 CNY/h (HOUR) + bandwidth 0.8 CNY/GB (GB).
 	t.Helper()
 	type itemPrice struct {
 		UnitPriceDiscount float64 `json:"UnitPriceDiscount"`
@@ -362,7 +362,7 @@ func TestPostgreSQLNormalizesPostpaid(t *testing.T) {
 }
 
 // TestPostgreSQLPostpaidHourly verifies POSTPAID pricing: the API returns
-// the hourly rate in 分; Parse must convert to 元/hour and ×730 for monthly.
+// the hourly rate in cents; Parse must convert to CNY/hour and x730 for monthly.
 func TestPostgreSQLPostpaidHourly(t *testing.T) {
 	m := PostgreSQLInstance{}
 	r := parser.PlannedResource{
@@ -380,7 +380,7 @@ func TestPostgreSQLPostpaidHourly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Postgres Extract: %v", err)
 	}
-	// POSTPAID: Price=30 (分) = 0.3 元/hour.
+	// POSTPAID: Price=30 (cents) = 0.3 CNY/hour.
 	raw := []byte(`{"Response":{"Price":30,"OriginalPrice":30,"Currency":"CNY"}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -561,8 +561,8 @@ func TestVPNGatewayPostpaidByTraffic(t *testing.T) {
 		t.Fatalf("VPN Extract: %v", err)
 	}
 	// Mirrors a real API POSTPAID_BY_HOUR response:
-	// InstancePrice: UnitPrice=0.48 (原价), DiscountPrice=0.228 (折后价元/hour), ChargeUnit="HOUR"
-	// BandwidthPrice: UnitPrice=0.8 (元/GB), DiscountPrice=0.374 (折后元/GB), ChargeUnit="GB"
+	// InstancePrice: UnitPrice=0.48 (list), DiscountPrice=0.228 (discounted CNY/hour), ChargeUnit="HOUR"
+	// BandwidthPrice: UnitPrice=0.8 (CNY/GB), DiscountPrice=0.374 (discounted CNY/GB), ChargeUnit="GB"
 	raw := []byte(`{"Response":{"Price":{"InstancePrice":{"UnitPrice":0.48,"DiscountPrice":0.228,"OriginalPrice":0.48,"ChargeUnit":"HOUR"},"BandwidthPrice":{"UnitPrice":0.8,"DiscountPrice":0.374,"OriginalPrice":0.8,"ChargeUnit":"GB"}}}}`)
 	comps, err := m.Parse(req, raw)
 	if err != nil {
@@ -571,7 +571,7 @@ func TestVPNGatewayPostpaidByTraffic(t *testing.T) {
 	if len(comps) != 2 {
 		t.Fatalf("VPN components = %d, want 2", len(comps))
 	}
-	// Instance: hourly billing, 0.228 元/h (折后) → monthly 0.228×730.
+	// Instance: hourly billing, 0.228 CNY/h (discounted) -> monthly 0.228 x 730.
 	if comps[0].HourlyCost != 0.228 {
 		t.Errorf("VPN instance hourly = %v, want 0.228", comps[0].HourlyCost)
 	}
@@ -599,7 +599,7 @@ func TestVPNGatewayPrepaidNone(t *testing.T) {
 		Region:  "ap-guangzhou",
 		Params:  map[string]interface{}{"InternetMaxBandwidthOut": 10, "InstanceChargeType": "PREPAID"},
 	}
-	// Real API response (PREPAID, Period=1): instance 427.86 元 (1-month total,
+	// Real API response (PREPAID, Period=1): instance 427.86 CNY (1-month total,
 	// ChargeUnit is empty string, NOT "none" as docs suggest), bandwidth 0.
 	raw := []byte(`{"Response":{"Price":{"BandwidthPrice":{"ChargeUnit":"","DiscountPrice":0,"OriginalPrice":0,"UnitPrice":0},"InstancePrice":{"ChargeUnit":"","DiscountPrice":427.86,"OriginalPrice":880,"UnitPrice":0}}}}`)
 	comps, err := m.Parse(req, raw)
@@ -1345,7 +1345,7 @@ func TestEIPExtractAndParse(t *testing.T) {
 	if len(comps) == 0 {
 		t.Fatal("EIP returned 0 components")
 	}
-	// POSTPAID hourly 0.5元 → monthly 0.5×730.
+	// POSTPAID hourly 0.5 CNY -> monthly 0.5 x 730.
 	if comps[0].HourlyCost != 0.5 {
 		t.Errorf("EIP hourly = %v, want 0.5", comps[0].HourlyCost)
 	}

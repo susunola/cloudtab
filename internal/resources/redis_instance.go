@@ -120,8 +120,8 @@ func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 	}
 
 	if amountUnit == "" {
-		// The Redis InquiryPriceCreateInstance API returns Price in 分
-		// (0.01 元) by default, but does not include AmountUnit in the response.
+		// The Redis InquiryPriceCreateInstance API returns Price in cents
+		// (0.01 CNY) by default, but does not include AmountUnit in the response.
 		// Default to "pent" so normalizeTencentAmount divides by 100.
 		amountUnit = "pent"
 	}
