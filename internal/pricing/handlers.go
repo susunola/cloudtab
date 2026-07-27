@@ -12,6 +12,7 @@ package pricing
 
 import (
 	tcCommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	tcHttp "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/http"
 	tcProfile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 
 	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
@@ -167,8 +168,22 @@ var handlers = map[string]productHandler{
 				if err := bindParams(params, in); err != nil {
 					return nil, err
 				}
-				out, err := client.(*vpc.Client).InquiryPriceCreateVpnGateway(in)
-				return sdkResult(out, err)
+			out, err := client.(*vpc.Client).InquiryPriceCreateVpnGateway(in)
+			return sdkResult(out, err)
+		},
+			// Direct Connect Gateway pricing: SDK typed method expects int64 but API
+			// returns float (e.g. TotalCost=0.1), so use CommonRequest to avoid
+			// unmarshal errors.
+			"InquirePriceCreateDirectConnectGateway": func(client interface{}, params map[string]interface{}) ([]byte, error) {
+				req := tcHttp.NewCommonRequest("vpc", "2017-03-12", "InquirePriceCreateDirectConnectGateway")
+				if err := req.SetActionParameters(params); err != nil {
+					return nil, err
+				}
+				resp := tcHttp.NewCommonResponse()
+				if err := client.(*vpc.Client).Send(req, resp); err != nil {
+					return nil, err
+				}
+				return resp.GetBody(), nil
 			},
 		},
 	},
