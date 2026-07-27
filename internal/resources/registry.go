@@ -79,6 +79,10 @@ func DefaultRegistry() *Registry {
 		r.Register("tencentcloud_lighthouse_instance", &LighthouseInstance{})
 		r.Register("tencentcloud_ecm_instance", &ECMInstance{})
 		r.Register("tencentcloud_sqlserver_instance", &SQLServerInstance{})
+		r.Register("tencentcloud_dcdb_db_instance", &DCDBInstance{})
+		r.Register("tencentcloud_dcdb_hourdb_instance", &DCDBInstance{})
+		// Legacy alias for backwards compatibility (old plans may use the
+		// generic name; the TF provider itself does not have this resource).
 		r.Register("tencentcloud_dcdb_instance", &DCDBInstance{})
 		r.Register("tencentcloud_gaap_proxy", &GAAPProxy{})
 		r.Register("tencentcloud_cwp_license_order", &YunjingLicense{})

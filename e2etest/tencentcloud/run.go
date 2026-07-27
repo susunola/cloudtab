@@ -174,16 +174,21 @@ func runProduct(tc TestCase, engine *pricing.Engine, skipTerraform bool) product
 		return result
 	}
 
-	// Filter resources by type
+	// Filter resources by type (exact match or prefix match for multi-type products like DCDB).
 	var resList []parser.PlannedResource
 	for _, r := range plan.Resources {
-		if r.Type == tc.ResourceType {
+		if r.Type == tc.ResourceType ||
+			(tc.ResourcePrefix != "" && strings.HasPrefix(r.Type, tc.ResourcePrefix)) {
 			resList = append(resList, r)
 		}
 	}
 	if len(resList) == 0 {
 		result.Status = "SKIP"
-		fmt.Printf("  ⚠ %s: no %s resources in plan.json\n", tc.Name, tc.ResourceType)
+		matchDesc := tc.ResourceType
+		if tc.ResourcePrefix != "" {
+			matchDesc = tc.ResourcePrefix + "*"
+		}
+		fmt.Printf("  ⚠ %s: no %s resources in plan.json\n", tc.Name, matchDesc)
 		return result
 	}
 	result.Resources = len(resList)

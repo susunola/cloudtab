@@ -982,9 +982,9 @@ func TestPrepaidPricesSingleMonth(t *testing.T) {
 		{"sqlserver", parser.PlannedResource{Type: "tencentcloud_sqlserver_instance", Region: "ap-guangzhou", After: map[string]interface{}{
 			"availability_zone": "ap-guangzhou-3", "memory": 8, "storage": 200,
 			"charge_type": "PREPAID", "prepaid_period": 12}}},
-		{"dcdb", parser.PlannedResource{Type: "tencentcloud_dcdb_instance", Region: "ap-guangzhou", After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200, "shard_count": 2,
-			"instance_charge_type": "PREPAID"}}},
+		{"dcdb", parser.PlannedResource{Type: "tencentcloud_dcdb_db_instance", Region: "ap-guangzhou", After: map[string]interface{}{
+			"zones": []interface{}{"ap-guangzhou-3"}, "shard_memory": 8, "shard_storage": 200, "shard_count": 2,
+			"period": 24}}},
 		{"yunjing", parser.PlannedResource{Type: "tencentcloud_cwp_license_order", Region: "ap-guangzhou", After: map[string]interface{}{}}},
 		{"cloudhsm", parser.PlannedResource{Type: "tencentcloud_cloudhsm_instance", Region: "ap-guangzhou", After: map[string]interface{}{}}},
 	}
@@ -1246,17 +1246,16 @@ func TestSQLServerPostpaidHourly(t *testing.T) {
 func TestDCDBExtractAndParse(t *testing.T) {
 	m := DCDBInstance{}
 	r := parser.PlannedResource{
-		Address: "tencentcloud_dcdb_instance.tdsql",
-		Type:    "tencentcloud_dcdb_instance",
+		Address: "tencentcloud_dcdb_db_instance.tdsql",
+		Type:    "tencentcloud_dcdb_db_instance",
 		Region:  "ap-guangzhou",
 		After: map[string]interface{}{
-			"zones":                []interface{}{"ap-guangzhou-3", "ap-guangzhou-4"},
-			"shard_memory":         8,
-			"shard_storage":        200,
-			"shard_count":          2,
-			"shard_node_count":     2,
-			"instance_charge_type": "PREPAID",
-			"prepaid_period":       12,
+			"zones":            []interface{}{"ap-guangzhou-3", "ap-guangzhou-4"},
+			"shard_memory":     8,
+			"shard_storage":    200,
+			"shard_count":      2,
+			"shard_node_count": 2,
+			"period":           12,
 		},
 	}
 	req, err := m.Extract(r)
@@ -1293,14 +1292,13 @@ func TestDCDBExtractAndParse(t *testing.T) {
 func TestDCDBPostpaidHourly(t *testing.T) {
 	m := DCDBInstance{}
 	r := parser.PlannedResource{
-		Type:   "tencentcloud_dcdb_instance",
+		Type:   "tencentcloud_dcdb_hourdb_instance",
 		Region: "ap-guangzhou",
 		After: map[string]interface{}{
-			"availability_zone": "ap-guangzhou-3",
-			"shard_memory":      8,
-			"shard_storage":     200,
-			"shard_count":       2,
-			"charge_type":       "POSTPAID",
+			"zones":         []interface{}{"ap-guangzhou-3"},
+			"shard_memory":  8,
+			"shard_storage": 200,
+			"shard_count":   2,
 		},
 	}
 	req, err := m.Extract(r)
@@ -1505,7 +1503,9 @@ var expectedAllTypes = []string{
 	"tencentcloud_cloudhsm_instance",
 	"tencentcloud_cwp_license_order",
 	"tencentcloud_cynosdb_cluster",
-	"tencentcloud_dcdb_instance",
+	"tencentcloud_dcdb_db_instance",
+	"tencentcloud_dcdb_hourdb_instance",
+	"tencentcloud_dcdb_instance", // legacy alias
 	"tencentcloud_domain_registration",
 	"tencentcloud_ecm_instance",
 	"tencentcloud_eip",
@@ -1841,11 +1841,11 @@ func TestAllMappersImplementContract(t *testing.T) {
 			},
 		},
 		{
-			addr: "tencentcloud_dcdb_instance.tdsql",
-			typ:  "tencentcloud_dcdb_instance",
+			addr: "tencentcloud_dcdb_hourdb_instance.tdsql",
+			typ:  "tencentcloud_dcdb_hourdb_instance",
 			after: map[string]interface{}{
-				"availability_zone": "ap-guangzhou-3", "shard_memory": 8, "shard_storage": 200,
-				"shard_count": 2, "charge_type": "POSTPAID",
+				"zones": []interface{}{"ap-guangzhou-3"}, "shard_memory": 8, "shard_storage": 200,
+				"shard_count": 2,
 			},
 		},
 		{
