@@ -110,6 +110,6 @@ func (EIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, 
 		Unit:        ap.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

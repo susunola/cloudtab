@@ -121,7 +121,9 @@ func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 		price = wrap.Response.Price
 	}
 
-	const currency = "CNY"
+	// No Currency field in the response; fall back to the site's expected
+	// currency (USD for Tencent International, CNY for the mainland).
+	currency := tencentCurrency(req.ExpectedCurrency)
 	var comps []output.CostComponent
 
 	// Instance fee (always present).

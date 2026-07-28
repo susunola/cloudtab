@@ -168,6 +168,6 @@ func (MongoDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

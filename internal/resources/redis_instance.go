@@ -116,7 +116,7 @@ func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 		amountUnit = wrap.Response.AmountUnit
 	}
 	if currency == "" {
-		currency = "CNY"
+		currency = tencentCurrency(req.ExpectedCurrency)
 	}
 
 	if amountUnit == "" {

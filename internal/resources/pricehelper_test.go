@@ -244,5 +244,6 @@ func TestParseAlibabaHuaweiCurrency(t *testing.T) {
 }
 
 // TestExpectedCurrencyFor mirrors the engine method that decides the expected
-// currency per provider/site. Intl Alibaba/Huawei -> USD; everything else CNY.
+// currency per provider/site. Intl Tencent/Alibaba/Huawei -> USD; every
+// Chinese-mainland site (and AWS) -> CNY.
 // (Defined in the pricing package's engine_test.go since it exercises Engine.)

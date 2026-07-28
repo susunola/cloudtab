@@ -95,6 +95,6 @@ func (GAAPProxy) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCompo
 		Unit:        "DAY",
 		HourlyCost:  0,
 		MonthlyCost: daily * daysPerMonth,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

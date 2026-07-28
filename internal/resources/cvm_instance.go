@@ -101,7 +101,7 @@ func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 
 	currency := price.InstancePrice.Currency
 	if currency == "" {
-		currency = "CNY"
+		currency = tencentCurrency(req.ExpectedCurrency)
 	}
 
 	ip := price.InstancePrice

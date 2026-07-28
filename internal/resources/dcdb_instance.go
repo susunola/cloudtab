@@ -110,6 +110,6 @@ func (DCDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCo
 		Unit:        strings.ToUpper(payMode),
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

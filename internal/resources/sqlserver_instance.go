@@ -116,6 +116,6 @@ func (SQLServerInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.C
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

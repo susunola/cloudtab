@@ -55,6 +55,6 @@ func (DirectConnectGateway) Parse(req pricing.PriceRequest, raw []byte) ([]outpu
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: cost,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

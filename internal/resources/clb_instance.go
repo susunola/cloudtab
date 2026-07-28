@@ -111,8 +111,9 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		price = wrap.Response.Price
 	}
 
-	// ItemPrice carries no Currency field (see docs); CLB is always CNY.
-	const currency = "CNY"
+	// ItemPrice carries no Currency field (see docs); fall back to the site's
+	// expected currency (USD for Tencent International, CNY for the mainland).
+	currency := tencentCurrency(req.ExpectedCurrency)
 
 	var comps []output.CostComponent
 	// Instance fee (always present).

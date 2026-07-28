@@ -85,12 +85,16 @@ func (SCFFunction) Estimate(r parser.PlannedResource) ([]output.CostComponent, e
 // staticUsageNote builds the zero-cost placeholder CostComponent used by the
 // usage-driven Tencent mappers. Cost is always 0 because no price can be derived
 // from the plan; the note tells the reader where to look for the real number.
+// Currency is deliberately left empty: a $0 note carries no monetary amount, so
+// it must not participate in the report's currency-uniformity check (which
+// ignores empty currencies) — otherwise it would wrongly force a "mixed
+// currencies" total on a Tencent International (USD) plan.
 func staticUsageNote(note string) []output.CostComponent {
 	return []output.CostComponent{{
 		Name:        note,
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: 0,
-		Currency:    "CNY",
+		Currency:    "",
 	}}
 }

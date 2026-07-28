@@ -396,9 +396,11 @@ func TestBackendSiteConstruction(t *testing.T) {
 }
 
 // TestExpectedCurrencyFor guards C1: the expected currency per provider/site is
-// USD only for International Alibaba/Huawei; everything else is CNY. This is the
-// value the engine threads into the mapper parse step so an intl USD quote is
-// labelled correctly instead of silently assumed CNY.
+// USD for the International site of Tencent, Alibaba and Huawei; every
+// Chinese-mainland site (and AWS, whose Price List API is USD-quoted and handled
+// separately) is CNY. This is the value the engine threads into the mapper parse
+// step so an intl USD quote is labelled correctly instead of silently assumed
+// CNY.
 func TestExpectedCurrencyFor(t *testing.T) {
 	cases := []struct {
 		provider string
@@ -409,7 +411,8 @@ func TestExpectedCurrencyFor(t *testing.T) {
 		{"alibaba", "domestic", "CNY"},
 		{"huawei", "intl", "USD"},
 		{"huawei", "domestic", "CNY"},
-		{"tencentcloud", "intl", "CNY"},
+		{"tencentcloud", "intl", "USD"},
+		{"tencentcloud", "domestic", "CNY"},
 		{"aws", "intl", "CNY"},
 		{"", "", "CNY"},
 	}

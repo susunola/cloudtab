@@ -92,6 +92,6 @@ func (YunjingLicense) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

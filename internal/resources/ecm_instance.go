@@ -87,6 +87,6 @@ func (ECMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 		Unit:        "HOUR",
 		HourlyCost:  hourly,
 		MonthlyCost: hourly * hoursPerMonth,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

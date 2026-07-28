@@ -96,7 +96,7 @@ func (CBSStorage) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 
 	currency := dp.Currency
 	if currency == "" {
-		currency = "CNY"
+		currency = tencentCurrency(req.ExpectedCurrency)
 	}
 
 	// Prefer the discounted unit price, falling back to the undiscounted rate

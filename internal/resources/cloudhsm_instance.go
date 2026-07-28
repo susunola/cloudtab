@@ -92,6 +92,6 @@ func (CloudHSMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Co
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

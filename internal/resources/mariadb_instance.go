@@ -114,6 +114,6 @@ func (MariaDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 		Unit:        strings.ToUpper(payMode),
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

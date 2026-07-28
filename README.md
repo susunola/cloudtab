@@ -93,6 +93,13 @@ through verbatim as a custom root domain (e.g. a private-cloud gateway). Prices
 are cached separately per site, so switching sites never returns a stale
 cross-site price.
 
+The site also drives the **currency label**: the International site bills in
+**USD**, the Chinese-mainland site in **CNY**. cloudtab labels each component
+accordingly (an explicit currency returned by the pricing API always wins), and
+the same applies to Alibaba and Huawei International accounts. A mixed-currency
+plan therefore shows the real per-component currency instead of forcing
+everything to CNY.
+
 Each cloud has its **own** site selector, so a single run can price, say, an
 International Tencent credential and a Chinese-mainland Huawei account at once:
 

@@ -188,12 +188,13 @@ func (CynosDBCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 	instancePayMode := strings.ToUpper(fmt.Sprintf("%v", req.Params["InstancePayMode"]))
 	storagePayMode := strings.ToUpper(fmt.Sprintf("%v", req.Params["StoragePayMode"]))
 
+	cur := tencentCurrency(req.ExpectedCurrency)
 	comps := make([]output.CostComponent, 0, 2)
 	comps = append(comps, cynosComponent("TDSQL-C compute", pb.InstancePrice,
-		strings.HasPrefix(instancePayMode, "PREPAID")))
+		strings.HasPrefix(instancePayMode, "PREPAID"), cur))
 	if pb.StoragePrice.hasPrice() {
 		comps = append(comps, cynosComponent("TDSQL-C storage", pb.StoragePrice,
-			strings.HasPrefix(storagePayMode, "PREPAID")))
+			strings.HasPrefix(storagePayMode, "PREPAID"), cur))
 	}
 	return comps, nil
 }
@@ -203,7 +204,7 @@ func (CynosDBCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 // discounted total is a period total treated as the monthly figure.
 // Storage POSTPAID uses ChargeUnit "GB*h" (per GB per hour); the unit price is
 // per-GB-per-hour, so without storage volume we can only show the rate.
-func cynosComponent(name string, tp cynosTradePrice, prepaid bool) output.CostComponent {
+func cynosComponent(name string, tp cynosTradePrice, prepaid bool, currency string) output.CostComponent {
 	if prepaid {
 		total := tp.TotalPriceDiscount
 		if total == 0 {
@@ -214,7 +215,7 @@ func cynosComponent(name string, tp cynosTradePrice, prepaid bool) output.CostCo
 			Unit:        "MONTH",
 			HourlyCost:  0,
 			MonthlyCost: total / 100.0,
-			Currency:    "CNY",
+			Currency:    currency,
 		}
 	}
 	// POSTPAID: UnitPriceDiscount is the hourly rate (cents).
@@ -225,14 +226,14 @@ func cynosComponent(name string, tp cynosTradePrice, prepaid bool) output.CostCo
 	chargeUnit := strings.ToUpper(strings.TrimSpace(tp.ChargeUnit))
 	if chargeUnit == "GB*H" {
 		// Storage per-GB-per-hour: without storage volume we can only show the
-		// rate (CNY/GB-h). Monthly cost depends on StorageLimit x usage hours.
+		// rate (currency/GB-h). Monthly cost depends on StorageLimit x usage hours.
 		rate := unit / 100.0
 		return output.CostComponent{
-			Name:        fmt.Sprintf("%s (%.4f CNY/GB-h)", name, rate),
+			Name:        fmt.Sprintf("%s (%.4f %s/GB-h)", name, rate, currency),
 			Unit:        "GB*H",
 			HourlyCost:  0,
 			MonthlyCost: 0,
-			Currency:    "CNY",
+			Currency:    currency,
 		}
 	}
 	hourly := unit / 100.0
@@ -241,6 +242,6 @@ func cynosComponent(name string, tp cynosTradePrice, prepaid bool) output.CostCo
 		Unit:        "HOUR",
 		HourlyCost:  hourly,
 		MonthlyCost: hourly * hoursPerMonth,
-		Currency:    "CNY",
+		Currency:    currency,
 	}
 }

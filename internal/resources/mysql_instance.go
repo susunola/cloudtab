@@ -93,7 +93,7 @@ func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 }
 
 func (MySQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	p, err := parseTencentPrice(raw)
+	p, err := parseTencentPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

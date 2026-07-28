@@ -243,16 +243,21 @@ func (e *Engine) siteKeyForProvider(provider string) string {
 }
 
 // ExpectedCurrencyFor returns the currency cloudtab expects for a provider on
-// its configured site. Alibaba Cloud and Huawei Cloud International price in
-// USD; every other provider/site combination prices in CNY. Mappers pass this
-// into the provider parse helpers so a response that omits the currency field
-// is labelled correctly instead of being silently assumed CNY (which would let
-// an intl USD quote be summed with CNY totals). An explicit currency returned
-// by the provider API always overrides this value.
+// its configured site. Tencent Cloud, Alibaba Cloud and Huawei Cloud all bill
+// their International sites in USD; every provider's Chinese-mainland site (and
+// AWS, whose Price List API is always USD-quoted and handled separately) bills
+// in CNY by this helper's reckoning. Mappers pass this into the provider parse
+// helpers so a response that omits the currency field is labelled correctly
+// instead of being silently assumed CNY (which would let an intl USD quote be
+// summed with CNY totals). An explicit currency returned by the provider API
+// always overrides this value.
 func (e *Engine) ExpectedCurrencyFor(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	if (provider == providerAlibaba || provider == providerHuawei) && e.siteKeyForProvider(provider) == "intl" {
-		return "USD"
+	switch provider {
+	case providerTencent, providerAlibaba, providerHuawei:
+		if e.siteKeyForProvider(provider) == "intl" {
+			return "USD"
+		}
 	}
 	return "CNY"
 }

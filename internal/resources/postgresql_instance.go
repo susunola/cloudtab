@@ -151,7 +151,7 @@ func (PostgreSQLInstance) Extract(r parser.PlannedResource) (pricing.PriceReques
 }
 
 func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-	p, err := parseTencentPrice(raw)
+	p, err := parseTencentPrice(raw, req.ExpectedCurrency)
 	if err != nil {
 		return nil, err
 	}

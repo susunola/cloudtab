@@ -86,6 +86,6 @@ func (LighthouseInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
-		Currency:    "CNY",
+		Currency:    tencentCurrency(req.ExpectedCurrency),
 	}}, nil
 }

@@ -24,6 +24,21 @@ func simpleHourlyCost(name string, hourly float64, currency string) []output.Cos
 	}}
 }
 
+// tencentCurrency resolves the currency for a Tencent Cloud component whose
+// pricing API response carries no per-item Currency field (many Tencent price
+// endpoints return only an amount). It honours the expected currency threaded
+// in by the engine — USD for the Tencent International site, CNY for the
+// Chinese-mainland site — and falls back to CNY when unset (the historical
+// default, so direct callers and tests that omit ExpectedCurrency are
+// unaffected). Mappers whose API DOES return a Currency field should prefer
+// that explicit value and use this only as the fallback.
+func tencentCurrency(expected string) string {
+	if strings.TrimSpace(expected) != "" {
+		return expected
+	}
+	return "CNY"
+}
+
 // monthlyFromPrice converts an InquiryPrice* discounted price into a monthly
 // figure, deciding PREPAID vs POSTPAID from the official ChargeUnit field
 // rather than guessing from OriginalPrice.
@@ -117,9 +132,11 @@ type tencentSimplePrice struct {
 // parseTencentPrice unmarshals a raw Tencent Cloud pricing response into a
 // tencentSimplePrice. The Tencent SDK wraps the real payload under a "Response"
 // key; this helper prefers the nested version when populated and falls back to
-// the top-level fields (used by test mocks). Currency defaults to "CNY" when
-// absent.
-func parseTencentPrice(raw []byte) (tencentSimplePrice, error) {
+// the top-level fields (used by test mocks). When the response omits its own
+// Currency field the expected currency threaded in by the engine is used (USD
+// for the Tencent International site), falling back to CNY when that too is
+// unset. An explicit API currency always wins.
+func parseTencentPrice(raw []byte, expectedCurrency string) (tencentSimplePrice, error) {
 	var wrap struct {
 		tencentSimplePrice
 		Response tencentSimplePrice `json:"Response"`
@@ -138,7 +155,7 @@ func parseTencentPrice(raw []byte) (tencentSimplePrice, error) {
 		p.Currency = wrap.Response.Currency
 	}
 	if p.Currency == "" {
-		p.Currency = "CNY"
+		p.Currency = tencentCurrency(expectedCurrency)
 	}
 	return p, nil
 }

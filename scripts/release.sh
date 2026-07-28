@@ -695,6 +695,42 @@ passes still complete before the engine is closed. Regression test:
 ### Tests
 - All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.19" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.19 — Tencent International prices now billed in USD
+
+### The bug
+When cloudtab priced a **Tencent Cloud International** (`intl` site) account, it
+billed correctly against the international endpoint but **labelled every price
+`CNY`** and summed them as CNY. Two independent gaps caused this:
+
+1. `Engine.ExpectedCurrencyFor("tencentcloud")` returned `CNY` regardless of
+   site — unlike Alibaba/Huawei, whose intl sites already resolved to `USD`.
+2. ~14 of the Tencent mappers **hardcoded** `Currency: "CNY"` instead of reading
+   the expected currency, so even a USD account got USD amounts mislabelled CNY.
+
+The net effect: a Tencent-intl user saw USD figures printed as `CNY` and a
+`TOTAL` that mixed the two silently. Domestic (mainland) accounts were correct.
+
+### The fix
+- `ExpectedCurrencyFor` now returns **USD for Tencent, Alibaba, or Huawei** when
+  the resolved site is `intl`, and `CNY` otherwise — symmetric across providers.
+- A shared helper `tencentCurrency(expected)` returns the request's expected
+  currency (falling back to `CNY`), and **all** Tencent mappers now use it in
+  place of the hardcoded `"CNY"`. An explicit currency from the pricing API
+  still wins over the expected fallback.
+- Mainland (domestic) behaviour is **byte-for-byte identical** — the fallback is
+  still `CNY`. Only intl accounts change.
+- A `$0` static usage-note no longer forces a false "mixed currencies" verdict
+  (its placeholder currency is now empty, which `uniformCurrency` ignores).
+
+### Tests
+- `TestTencentCurrencyHelper`, `TestTencentMappersHonorExpectedCurrency`
+  (SQLServer / DCDB / MySQL across intl→USD and domestic→CNY), and
+  `TestParseTencentPriceExplicitCurrencyWins` (API currency wins).
+- `TestExpectedCurrencyFor` updated: Tencent intl → USD, domestic → CNY.
+- All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
