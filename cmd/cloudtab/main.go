@@ -179,13 +179,17 @@ func main() {
 			}
 
 			conc := resolveConcurrency(diffConcurrency)
-			b, err := priceReport(engine, before, beforeUsage, conc, diffFailOnError)
+			// Price both plans concurrently. The engine is safe for parallel use
+			// (atomic run counters, mutex-guarded client/cache/dedup maps, and a
+			// bbolt cache that tolerates parallel readers), so running the two
+			// passes together overlaps their network latency instead of pricing
+			// them back-to-back. The second pass also benefits from the first
+			// pass's on-disk cache, so a large diff finishes noticeably faster.
+			// priceBoth waits for both passes to finish before returning, so the
+			// deferred engine.Close() can never race a still-running pass.
+			b, a, err := priceBoth(engine, before, after, beforeUsage, afterUsage, conc, diffFailOnError)
 			if err != nil {
-				return fmt.Errorf("before: %w", err)
-			}
-			a, err := priceReport(engine, after, afterUsage, conc, diffFailOnError)
-			if err != nil {
-				return fmt.Errorf("after: %w", err)
+				return err
 			}
 			logRunSummary(engine, &b, &a)
 			return output.RenderDiff(os.Stdout, output.ComputeDiff(b, a), diffFmt)
@@ -526,8 +530,42 @@ func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverride
 	return rep, nil
 }
 
-// result is the outcome of pricing one resource: exactly one of cost/skip is
-// set on success, or err is set on failure.
+// priceBoth concurrently prices the before/after plans for a diff. Both passes
+// share the engine (which is safe for parallel use: atomic run counters,
+// mutex-guarded client/cache/dedup maps, and a bbolt cache that tolerates
+// parallel readers), so running them together overlaps their network latency
+// instead of pricing them back-to-back. It waits for BOTH passes to finish
+// before returning, so the caller's deferred engine.Close() can never race a
+// still-running pass and leak goroutines.
+//
+// On error the first failing pass wins: if before fails we surface it (wrapped
+// with an "before:" prefix) without waiting further than the already-joined
+// WaitGroup; an after-only failure is wrapped with "after:". Both reports are
+// still returned so the caller can inspect whatever was priced.
+func priceBoth(engine *pricing.Engine, before, after string, beforeUsage, afterUsage parser.UsageOverrides, conc int, failOnError bool) (b, a output.Report, err error) {
+	var beforeErr, afterErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		// Capture into the named returns so the caller sees whatever each pass
+		// produced even if the sibling errored.
+		b, beforeErr = priceReport(engine, before, beforeUsage, conc, failOnError)
+	}()
+	go func() {
+		defer wg.Done()
+		a, afterErr = priceReport(engine, after, afterUsage, conc, failOnError)
+	}()
+	wg.Wait()
+	if beforeErr != nil {
+		return b, a, fmt.Errorf("before: %w", beforeErr)
+	}
+	if afterErr != nil {
+		return b, a, fmt.Errorf("after: %w", afterErr)
+	}
+	return b, a, nil
+}
+
 type result struct {
 	cost *output.ResourceCost
 	skip *output.SkippedResource

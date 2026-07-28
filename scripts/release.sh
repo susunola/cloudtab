@@ -661,6 +661,40 @@ fails the run under `--fail-on-error`) rather than fabricating a free line.
 - `TestAlibabaEIPParseNoDataErrors` asserts `Parse({})` returns an error.
 - All **60** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.18" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.18 — merged community PR #6 + faster `diff`
+
+### Merged: PR #6 (TDSQL-C rework + TDSQL MySQL DCDB)
+Community contribution folded in, bringing the registry to **62 mappers**
+(Tencent 26 / AWS 18 / Alibaba 9 / Huawei 9):
+- **TDSQL-C (`tencentcloud_cynosdb_cluster`)** reworked to handle all three
+  instance pay modes — PREPAID / POSTPAID / SERVERLESS (from `db_mode` +
+  `charge_type`) — mapping `min/max_cpu` to the API's `Ccu`, and summing the
+  instance + storage `TradePrice` blocks (cents) into compute + storage
+  components. Storage POSTPAID with `ChargeUnit "GB*h"` is shown as a per-GB-per-
+  hour rate, not a fabricated monthly figure.
+- **TDSQL MySQL (`tencentcloud_dcdb_db_instance` prepaid,
+  `tencentcloud_dcdb_hourdb_instance` postpaid)** added via `dcdb:DescribeDCDBPrice`
+  (billing mode is taken from the resource type, `AmountUnit="pent"` → cents).
+  The legacy `tencentcloud_dcdb_instance` alias is kept for old plans.
+- README "Supported resources" table updated (62 types); the stale "60" header
+  count fixed. [CONTRIBUTING.md](CONTRIBUTING.md) added, documenting the
+  Mapper contract and the **branch-from-latest-`main`-and-rebase** rule that
+  caused the PR #5/#6 merge conflict.
+
+### Faster `diff`
+`cloudtab diff` used to price the `before` and `after` plans **sequentially**.
+They now run **concurrently** against the shared engine (which is safe for
+parallel use: atomic run counters, mutex-guarded client/cache/dedup maps, and a
+bbolt cache that tolerates parallel readers). The second pass also benefits from
+the first pass's on-disk cache, so a large diff finishes noticeably faster. Both
+passes still complete before the engine is closed. Regression test:
+`TestPriceBothConcurrentPricesBothPlans`.
+
+### Tests
+- All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

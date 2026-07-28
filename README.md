@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 60 resource types across four providers.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 62 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -215,7 +215,7 @@ Sample output:
 | Lighthouse | `tencentcloud_lighthouse_instance` | `lighthouse:InquirePriceCreateInstances` |
 | ECM (Edge) | `tencentcloud_ecm_instance` | `ecm:DescribePriceRunInstance` |
 | SQL Server | `tencentcloud_sqlserver_instance` | `sqlserver:InquiryPriceCreateDBInstances` |
-| TDSQL MySQL | `tencentcloud_dcdb_instance` | `dcdb:DescribeDCDBPrice` |
+| TDSQL MySQL | `tencentcloud_dcdb_db_instance` (prepaid), `tencentcloud_dcdb_hourdb_instance` (postpaid); legacy `tencentcloud_dcdb_instance` also accepted | `dcdb:DescribeDCDBPrice` |
 | GAAP | `tencentcloud_gaap_proxy` | `gaap:InquiryPriceCreateProxy` |
 | CWP (Host Security) | `tencentcloud_cwp_license_order` | `yunjing:InquiryPriceOpenProVersionPrepaid` |
 | CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` (intl: unavailable — the API returns a placeholder price, not a real quote) |

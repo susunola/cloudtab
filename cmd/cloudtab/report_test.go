@@ -154,3 +154,39 @@ func TestPriceReportConcurrencyFloor(t *testing.T) {
 		t.Fatalf("skipped = %d, want 5", len(rep.Skipped))
 	}
 }
+
+// TestPriceBothConcurrentPricesBothPlans verifies the diff path prices the
+// before and after plans at the same time (overlapping their network latency)
+// rather than sequentially, while still collecting both reports correctly and
+// terminating. Two differently-sized plans at high fan-out maximize the chance
+// of a race or a leak surfacing; the -race build catches the former and the
+// test harness timeout catches the latter. Unsupported types are used so no
+// credentials/network are required.
+func TestPriceBothConcurrentPricesBothPlans(t *testing.T) {
+	const (
+		beforeN = 120 // > defaultConcurrency (8)
+		afterN  = 90
+	)
+	beforePath := writeManyUnsupportedPlan(t, beforeN)
+	afterPath := writeManyUnsupportedPlan(t, afterN)
+
+	engine, err := pricing.NewEngine(pricing.Config{
+		SecretID: "id", SecretKey: "key", Region: "ap-guangzhou", NoCache: true,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer engine.Close()
+
+	b, a, err := priceBoth(engine, beforePath, afterPath,
+		parser.UsageOverrides{}, parser.UsageOverrides{}, 16, false)
+	if err != nil {
+		t.Fatalf("priceBoth error: %v", err)
+	}
+	if len(b.Skipped) != beforeN {
+		t.Fatalf("before skipped = %d, want %d", len(b.Skipped), beforeN)
+	}
+	if len(a.Skipped) != afterN {
+		t.Fatalf("after skipped = %d, want %d", len(a.Skipped), afterN)
+	}
+}

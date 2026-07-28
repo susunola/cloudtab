@@ -1,73 +1,83 @@
 # Contributing to cloudtab
 
-We keep the contribution surface small on purpose: **most contributions are a single new file — one Mapper per Tencent Cloud resource type**.
+Thanks for helping extend cloudtab! This guide covers the conventions that keep
+the project healthy. Most of them are enforced by CI (`scripts/check.sh` runs
+`gofmt`, `go vet`, `go build`, and `go test -race ./...`).
 
-## Adding a new resource type in ~30 lines
+## Adding a resource type (Mapper)
 
-1. Find the Terraform resource type you want to price, e.g. `tencentcloud_mysql_instance`.
-2. Find its `InquiryPrice*` API in [Tencent Cloud docs](https://cloud.tencent.com/document/api).
-3. Create `internal/resources/<name>.go` implementing `Mapper`:
+A "Mapper" is the unit of support for one Terraform resource type. It lives in
+`internal/resources/` as one file implementing the `Mapper` interface:
 
 ```go
-type MySQLInstance struct{}
-
-func (MySQLInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, error) {
-    // Read plan attributes → build PriceRequest with Product / Action / Params.
-}
-func (MySQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
-    // Decode the InquiryPrice* JSON → typed CostComponents.
+type Mapper interface {
+    Extract(r parser.PlannedResource) (pricing.PriceRequest, error)
+    Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error)
 }
 ```
 
-4. Register it in `internal/resources/registry.go`:
+- `Extract` turns plan attributes into a neutral `PriceRequest` (provider,
+  product, action, region, params).
+- `Parse` decodes the raw provider response into `CostComponent`s.
 
-```go
-r.Register("tencentcloud_mysql_instance", &MySQLInstance{})
-```
+Then register it once in `internal/resources/registry.go`
+(`DefaultRegistry`). Each mapper needs:
 
-5. If the product isn't wired yet, register **one `productHandler` in `internal/pricing/handlers.go`** — a client factory plus an `Action → invoker` map. You never touch the engine core (`engine.go`): its `Query`/`invoke` path is fully generic and dispatches through the `handlers` registry.
+1. A unit test in `internal/resources/mapper_integration_test.go` (or a
+   dedicated `_test.go`) covering `Extract` (param shaping) and `Parse`
+   (cost math) for every billing mode it supports.
+2. A row in the "Supported resources" table in `README.md`, and an updated
+   resource-type count in the README header.
 
-```go
-// internal/pricing/handlers.go
-"cdb": {
-    product: "cdb",
-    newClient: func(cred *tcCommon.Credential, region string, prof *tcProfile.ClientProfile) (interface{}, error) {
-        return cdb.NewClient(cred, region, prof)
-    },
-    actions: map[string]actionInvoker{
-        "DescribeDBPrice": func(client interface{}, params map[string]interface{}) ([]byte, error) {
-            in := cdb.NewDescribeDBPriceRequest()
-            if err := bindParams(params, in); err != nil {
-                return nil, err
-            }
-            out, err := client.(*cdb.Client).DescribeDBPrice(in)
-            return sdkResult(out, err)
-        },
-    },
-},
-```
+## Branch baseline (important)
 
-6. Add a fixture under `testdata/` and a `_test.go` next to the mapper using a recorded response.
-7. Send a PR — include the API doc URL and one real-world plan snippet.
+**Base your PR branch on the latest `main` and rebase before opening/updating the
+PR.** Do not fork a branch off an old commit or a sibling PR's branch.
 
-> **Why two layers?** `resources/*.go` is *what* to price (plan → request, response → cost); `pricing/handlers.go` is *how* to call the SDK. Keeping them apart means a new product touches exactly two well-known files and never the dispatch/cache/concurrency core.
+Why: the registry (`internal/resources/registry.go`) and the integration test
+that asserts the registered-type count (`expectedAllTypes` in
+`mapper_integration_test.go`) must stay in lock-step. A PR branched from a stale
+commit adds a mapper whose count the merge target no longer expects, producing
+conflicts and a `slice length != map count` test failure on merge. PRs that are
+strict supersets of each other (e.g. one contains all of another's commits)
+should be merged as a single PR — the narrower one is then closed, and GitHub
+keeps both authors' commits.
 
-## Guidelines
-
-- **One resource per file.** Reviewers can look at the file and the API doc side by side.
-- **No hand-maintained price tables** unless the product has no `InquiryPrice*` API (COS/CDN/SCF etc.).
-- **PREPAID vs POSTPAID**: PREPAID returns fixed prices (use `DiscountPrice`); POSTPAID returns hourly rates (multiply by `730` for monthly).
-- **`usage.yml` inputs** (traffic in GB, requests/mo, egress) go through the same Extract path — they are merged into the resource's attributes before `Extract`, so a mapper just reads them like any other field.
-
-## Local dev
+To rebase before pushing:
 
 ```bash
-git clone https://github.com/susunola/cloudtab
-cd cloudtab
-go build ./...
-go test ./...
+git fetch origin
+git rebase origin/main
 ```
 
-## Code of conduct
+## Language and content conventions
 
-Be kind, be direct. No spec creep, no non-code drama. If in doubt, open an issue first.
+- **English only** in tracked files (comments, docs, and user-facing strings).
+  Use `CNY` not `元`, `cents` not `分`, `hour` not `小时`, `10k` not `万`.
+- No tooling/agent branding and no hardcoded local paths (e.g. `/Users/...`)
+  in tracked files.
+
+## Pricing integrity
+
+- **Never fabricate.** Only price values deterministically derivable from the
+  plan + provider API. Usage-driven resources (S3, EIP idle, COS/CDN/CFS/SCF)
+  are reported as zero-cost placeholders with a note, never as a made-up number.
+- If a provider response yields **no positive cost** (empty or business-failure
+  payload), return an error from `Parse` rather than emitting `$0`. The engine
+  then skips the resource with a note. When you add such a guard to a shared
+  helper, update every caller that previously discarded the error.
+
+## Dependencies
+
+- **Zero dependency drift.** All existing module dependencies stay at their
+  pinned versions — never upgrade an existing dep. New dependencies require
+  discussion.
+
+## Workflow
+
+- Run `bash scripts/check.sh` before every commit; better, install it as a
+  pre-commit hook: `ln -sf ../../scripts/check.sh .git/hooks/pre-commit`.
+- **Push early.** CI only runs on push/PR, so changes left uncommitted bypass
+  the safety net. Avoid accumulating unreviewed "fix" files in the working tree.
+- **Every bug fix ships a regression test** asserting the exact broken property
+  (guard the bug *class*, not just the one repro).
