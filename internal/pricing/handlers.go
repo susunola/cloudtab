@@ -147,13 +147,20 @@ var handlers = map[string]productHandler{
 			return redis.NewClient(cred, region, prof)
 		},
 		actions: map[string]actionInvoker{
+			// Use CommonRequest instead of the typed SDK method because the Go SDK's
+			// InquiryPriceCreateInstanceResponseParams only defines Price and RequestId,
+			// dropping Currency, AmountUnit, HighPrecisionPrice, and OriginalPrice
+			// from the serialized output. CommonRequest preserves the full API response.
 			"InquiryPriceCreateInstance": func(client interface{}, params map[string]interface{}) ([]byte, error) {
-				in := redis.NewInquiryPriceCreateInstanceRequest()
-				if err := bindParams(params, in); err != nil {
+				req := tcHttp.NewCommonRequest("redis", "2018-04-12", "InquiryPriceCreateInstance")
+				if err := req.SetActionParameters(params); err != nil {
 					return nil, err
 				}
-				out, err := client.(*redis.Client).InquiryPriceCreateInstance(in)
-				return sdkResult(out, err)
+				resp := tcHttp.NewCommonResponse()
+				if err := client.(*redis.Client).Send(req, resp); err != nil {
+					return nil, err
+				}
+				return resp.GetBody(), nil
 			},
 		},
 	},

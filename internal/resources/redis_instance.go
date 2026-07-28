@@ -81,33 +81,40 @@ func (RedisInstance) Extract(r parser.PlannedResource) (pricing.PriceRequest, er
 }
 
 func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, error) {
+	// The raw JSON from CommonRequest is wrapped: {"Response": {...fields...}}.
+	// Parse both levels so it works regardless of wrapping.
 	var wrap struct {
-		Price              float64 `json:"Price"`
-		HighPrecisionPrice float64 `json:"HighPrecisionPrice"`
-		Currency           string  `json:"Currency"`
-		AmountUnit         string  `json:"AmountUnit"`
-		Response           struct {
-			Price              float64 `json:"Price"`
-			HighPrecisionPrice float64 `json:"HighPrecisionPrice"`
-			Currency           string  `json:"Currency"`
-			AmountUnit         string  `json:"AmountUnit"`
+		Price                      float64 `json:"Price"`
+		HighPrecisionPrice         float64 `json:"HighPrecisionPrice"`
+		OriginalPrice              float64 `json:"OriginalPrice"`
+		HighPrecisionOriginalPrice float64 `json:"HighPrecisionOriginalPrice"`
+		Currency                   string  `json:"Currency"`
+		AmountUnit                 string  `json:"AmountUnit"`
+		Response                   struct {
+			Price                      float64 `json:"Price"`
+			HighPrecisionPrice         float64 `json:"HighPrecisionPrice"`
+			OriginalPrice              float64 `json:"OriginalPrice"`
+			HighPrecisionOriginalPrice float64 `json:"HighPrecisionOriginalPrice"`
+			Currency                   string  `json:"Currency"`
+			AmountUnit                 string  `json:"AmountUnit"`
 		} `json:"Response"`
 	}
 	if err := json.Unmarshal(raw, &wrap); err != nil {
 		return nil, err
 	}
 
+	// Prefer Response-wrapped fields (CommonRequest returns {"Response":{...}}).
 	price := wrap.Price
-	if wrap.HighPrecisionPrice > 0 {
-		price = wrap.HighPrecisionPrice
-	}
 	currency := wrap.Currency
 	amountUnit := wrap.AmountUnit
+
 	if wrap.Response.Price > 0 {
 		price = wrap.Response.Price
 	}
 	if wrap.Response.HighPrecisionPrice > 0 {
 		price = wrap.Response.HighPrecisionPrice
+	} else if wrap.HighPrecisionPrice > 0 {
+		price = wrap.HighPrecisionPrice
 	}
 	if wrap.Response.Currency != "" {
 		currency = wrap.Response.Currency
@@ -115,23 +122,25 @@ func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 	if wrap.Response.AmountUnit != "" {
 		amountUnit = wrap.Response.AmountUnit
 	}
+
+	// Fallback: if AmountUnit is still empty, the API historically returned
+	// Price in "pent" (cents). If Currency is empty, default to USD for
+	// international regions or CNY otherwise.
+	if amountUnit == "" {
+		amountUnit = "pent"
+	}
 	if currency == "" {
 		currency = "CNY"
 	}
 
-	if amountUnit == "" {
-		// The Redis InquiryPriceCreateInstance API returns Price in cents
-		// (0.01 CNY) by default, but does not include AmountUnit in the response.
-		// Default to "pent" so normalizeTencentAmount divides by 100.
-		amountUnit = "pent"
-	}
-	priceYuan := normalizeTencentAmount(price, amountUnit)
+	priceBase := normalizeTencentAmount(price, amountUnit)
 	billingMode := fmt.Sprintf("%v", req.Params["BillingMode"])
-	monthly := priceYuan
+	monthly := priceBase
 	hourly := 0.0
 	if billingMode == "0" {
-		hourly = priceYuan
-		monthly = priceYuan * hoursPerMonth
+		// POSTPAID: API returns hourly rate
+		hourly = priceBase
+		monthly = priceBase * hoursPerMonth
 	}
 
 	return []output.CostComponent{{
