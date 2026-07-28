@@ -724,6 +724,14 @@ The net effect: a Tencent-intl user saw USD figures printed as `CNY` and a
 - A `$0` static usage-note no longer forces a false "mixed currencies" verdict
   (its placeholder currency is now empty, which `uniformCurrency` ignores).
 
+### Also merged: PR #7 (Redis raw-response currency/unit)
+Community contribution (`cowboysbff/fix/redis-pricing-use-common-request`):
+the Redis `InquiryPriceCreateInstance` call now uses a `CommonRequest` so the
+raw API response keeps `Currency`, `AmountUnit`, and `HighPrecisionPrice` (the
+typed SDK struct silently dropped them). Combined with the fix above, Redis on
+an international region (e.g. `ap-singapore`) now reports the real USD figure
+instead of a mislabelled CNY amount.
+
 ### Tests
 - `TestTencentCurrencyHelper`, `TestTencentMappersHonorExpectedCurrency`
   (SQLServer / DCDB / MySQL across intl→USD and domestic→CNY), and
