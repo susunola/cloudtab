@@ -102,7 +102,7 @@ func main() {
 			}
 			defer engine.Close()
 
-			usage, err := parser.LoadUsageYAML(usageFile)
+			usage, err := parser.LoadUsageFile(usageFile)
 			if err != nil {
 				return fmt.Errorf("load usage file: %w", err)
 			}
@@ -169,11 +169,11 @@ func main() {
 			}
 			defer engine.Close()
 
-			beforeUsage, err := parser.LoadUsageYAML(beforeUsageFile)
+			beforeUsage, err := parser.LoadUsageFile(beforeUsageFile)
 			if err != nil {
 				return fmt.Errorf("load before usage file: %w", err)
 			}
-			afterUsage, err := parser.LoadUsageYAML(afterUsageFile)
+			afterUsage, err := parser.LoadUsageFile(afterUsageFile)
 			if err != nil {
 				return fmt.Errorf("load after usage file: %w", err)
 			}
@@ -192,7 +192,11 @@ func main() {
 				return err
 			}
 			logRunSummary(engine, &b, &a)
-			return output.RenderDiff(os.Stdout, output.ComputeDiff(b, a), diffFmt)
+			diffReport, err := output.ComputeDiffChecked(b, a)
+			if err != nil {
+				return err
+			}
+			return output.RenderDiff(os.Stdout, diffReport, diffFmt)
 		},
 	}
 	diff.Flags().StringVar(&before, "before", "", "Path to baseline plan.json (required)")
@@ -415,9 +419,9 @@ func clearCache(path string) error {
 }
 
 // priceReport is the shared pipeline: parse plan -> dispatch to mappers -> collect cost.
-// Mappers implementing resources.StaticMapper are evaluated locally; all others are
-// routed through the pricing engine with bounded concurrency so we stay under
-// the provider's pricing QPS limit.
+// Usage and static mappers are evaluated locally; all other mappers are routed
+// through the pricing engine with bounded concurrency so we stay under the
+// provider's pricing QPS limit.
 //
 // By default the run is lenient: a resource whose pricing errors (API failure,
 // parse failure) is recorded as a SkippedResource and the rest of the report
@@ -454,21 +458,24 @@ func logRunSummary(engine *pricing.Engine, reps ...*output.Report) {
 	))
 }
 
-func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
+func priceReport(engine *pricing.Engine, path string, usage parser.UsageData, concurrency int, failOnError bool) (output.Report, error) {
 	return priceReportWithLoader(engine, path, usage, concurrency, failOnError, parser.LoadPlanJSON)
 }
 
-func priceInventoryReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
+func priceInventoryReport(engine *pricing.Engine, path string, usage parser.UsageData, concurrency int, failOnError bool) (output.Report, error) {
 	return priceReportWithLoader(engine, path, usage, concurrency, failOnError, parser.LoadPlanInventoryJSON)
 }
 
-func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool, loadPlan func(string) (*parser.Plan, error)) (output.Report, error) {
+func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.UsageData, concurrency int, failOnError bool, loadPlan func(string) (*parser.Plan, error)) (output.Report, error) {
 	var rep output.Report
 	plan, err := loadPlan(path)
 	if err != nil {
 		return rep, fmt.Errorf("parse plan: %w (hint: pass the JSON form — run 'terraform show -json <planfile> > plan.json')", err)
 	}
 	registry := resources.DefaultRegistry()
+	if err := validateVersionedUsage(plan, usage, registry); err != nil {
+		return rep, err
+	}
 
 	if concurrency < 1 {
 		concurrency = 1
@@ -478,7 +485,7 @@ func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.Usa
 		concurrency = n
 	}
 
-	jobs := make(chan parser.PlannedResource, len(plan.Resources))
+	jobs := make(chan pricingJob, len(plan.Resources))
 	results := make(chan result, len(plan.Resources))
 	var wg sync.WaitGroup
 
@@ -486,8 +493,8 @@ func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.Usa
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for r := range jobs {
-				results <- priceJob(engine, registry, r, failOnError)
+			for job := range jobs {
+				results <- priceJob(engine, registry, job.resource, job.usage, failOnError)
 			}
 		}()
 	}
@@ -501,10 +508,8 @@ func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.Usa
 	}()
 
 	for _, r := range plan.Resources {
-		if u, ok := usage[r.Address]; ok {
-			r = mergeUsageIntoAfter(r, u)
-		}
-		jobs <- r
+		prepared, typedUsage := prepareResourceUsage(r, usage)
+		jobs <- pricingJob{resource: prepared, usage: typedUsage}
 	}
 	close(jobs)
 
@@ -535,6 +540,9 @@ func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.Usa
 	if len(pricingErrs) > 0 {
 		return rep, errors.Join(pricingErrs...)
 	}
+	if err := output.ValidateFiniteReport(rep); err != nil {
+		return rep, fmt.Errorf("invalid price aggregate: %w", err)
+	}
 	return rep, nil
 }
 
@@ -550,7 +558,7 @@ func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.Usa
 // with an "before:" prefix) without waiting further than the already-joined
 // WaitGroup; an after-only failure is wrapped with "after:". Both reports are
 // still returned so the caller can inspect whatever was priced.
-func priceBoth(engine *pricing.Engine, before, after string, beforeUsage, afterUsage parser.UsageOverrides, conc int, failOnError bool) (b, a output.Report, err error) {
+func priceBoth(engine *pricing.Engine, before, after string, beforeUsage, afterUsage parser.UsageData, conc int, failOnError bool) (b, a output.Report, err error) {
 	var beforeErr, afterErr error
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -574,6 +582,11 @@ func priceBoth(engine *pricing.Engine, before, after string, beforeUsage, afterU
 	return b, a, nil
 }
 
+type pricingJob struct {
+	resource parser.PlannedResource
+	usage    *parser.UsageResource
+}
+
 type result struct {
 	cost *output.ResourceCost
 	skip *output.SkippedResource
@@ -585,7 +598,7 @@ type result struct {
 // is treated like a pricing error: under failOnError it fails the report,
 // otherwise it degrades to a SkippedResource — matching priceResource's
 // error-handling contract.
-func priceJob(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, failOnError bool) (res result) {
+func priceJob(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, usage *parser.UsageResource, failOnError bool) (res result) {
 	defer func() {
 		if p := recover(); p != nil {
 			err := fmt.Errorf("panic pricing %s: %v", r.Address, p)
@@ -600,7 +613,7 @@ func priceJob(engine *pricing.Engine, registry *resources.Registry, r parser.Pla
 			}
 		}
 	}()
-	cost, skip, err := priceResource(engine, registry, r, failOnError)
+	cost, skip, err := priceResource(engine, registry, r, usage, failOnError)
 	if err != nil {
 		return result{err: fmt.Errorf("%s: %w", r.Address, err)}
 	}
@@ -612,7 +625,7 @@ func priceJob(engine *pricing.Engine, registry *resources.Registry, r parser.Pla
 // becomes a SkippedResource rather than a hard failure, so one bad SKU cannot
 // abort the whole report. When failOnError is true, such errors are returned as
 // a non-nil error and fail the report.
-func priceResource(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, failOnError bool) (*output.ResourceCost, *output.SkippedResource, error) {
+func priceResource(engine *pricing.Engine, registry *resources.Registry, r parser.PlannedResource, usage *parser.UsageResource, failOnError bool) (*output.ResourceCost, *output.SkippedResource, error) {
 	mapper, ok := registry.Lookup(r.Type)
 	if !ok {
 		return nil, &output.SkippedResource{
@@ -620,8 +633,35 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 		}, nil
 	}
 
-	// Static mappers bypass the pricing engine entirely (e.g. COS/CDN/CFS/SCF,
-	// whose cost is usage-driven and not derivable from a Terraform plan).
+	// Usage mappers price only explicit, versioned usage and user-supplied rate
+	// evidence. They never call a cloud backend and never turn unknown usage into
+	// a fabricated zero.
+	if um, ok := mapper.(resources.UsageMapper); ok {
+		if usage == nil {
+			return nil, &output.SkippedResource{
+				Address: r.Address, Type: r.Type,
+				Category: "usage_required",
+				Reason:   "versioned usage items with supplied rates are required; cost is unknown",
+			}, nil
+		}
+		comps, err := um.EstimateUsage(r, *usage)
+		if err != nil {
+			if failOnError {
+				return nil, nil, fmt.Errorf("usage estimate %s: %w", r.Address, err)
+			}
+			category := "usage_error"
+			var usageErr *resources.UsageEstimateError
+			if errors.As(err, &usageErr) && usageErr.Category != "" {
+				category = usageErr.Category
+			}
+			return nil, &output.SkippedResource{
+				Address: r.Address, Type: r.Type, Category: category, Reason: err.Error(),
+			}, nil
+		}
+		return &output.ResourceCost{Address: r.Address, Type: r.Type, Components: comps}, nil, nil
+	}
+
+	// Static mappers bypass the pricing engine entirely.
 	if sm, ok := mapper.(resources.StaticMapper); ok {
 		comps, err := sm.Estimate(r)
 		if err != nil {
@@ -675,6 +715,47 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 	return &output.ResourceCost{
 		Address: r.Address, Type: r.Type, Components: comps,
 	}, nil, nil
+}
+
+func validateVersionedUsage(plan *parser.Plan, usage parser.UsageData, registry *resources.Registry) error {
+	if !usage.IsVersioned() {
+		return nil
+	}
+	known := make(map[string]parser.PlannedResource, len(plan.Resources))
+	for _, resource := range plan.Resources {
+		known[resource.Address] = resource
+	}
+	for address, typedUsage := range usage.Resources {
+		resource, ok := known[address]
+		if !ok {
+			return fmt.Errorf("unknown usage resource address %q: not present in the loaded plan", address)
+		}
+		mapper, ok := registry.Lookup(resource.Type)
+		if !ok {
+			return fmt.Errorf("versioned usage resource %q has unsupported type %q", address, resource.Type)
+		}
+		usageMapper, ok := mapper.(resources.UsageMapper)
+		if !ok {
+			return fmt.Errorf("versioned usage resource %q has type %q, which does not accept usage items", address, resource.Type)
+		}
+		// Validate the complete vocabulary, units, rates, and arithmetic before
+		// any worker can issue a provider API call for another resource.
+		if _, err := usageMapper.EstimateUsage(resource, typedUsage); err != nil {
+			return fmt.Errorf("invalid usage for %s: %w", address, err)
+		}
+	}
+	return nil
+}
+
+func prepareResourceUsage(r parser.PlannedResource, usage parser.UsageData) (parser.PlannedResource, *parser.UsageResource) {
+	if legacy, ok := usage.Legacy[r.Address]; ok {
+		r = mergeUsageIntoAfter(r, legacy)
+	}
+	if typed, ok := usage.Resources[r.Address]; ok {
+		copy := typed
+		return r, &copy
+	}
+	return r, nil
 }
 
 func mergeUsageIntoAfter(r parser.PlannedResource, usage map[string]interface{}) parser.PlannedResource {

@@ -449,10 +449,16 @@ func TestNewAWSMappersRegistered(t *testing.T) {
 			t.Errorf("registry missing %s", tfType)
 		}
 	}
-	// S3 / EIP / EFS must remain unregistered by design.
+	// Usage-only resources are registered as local UsageMappers. They require
+	// explicit versioned usage and supplied rate evidence, not AWS credentials.
 	for _, tfType := range []string{"aws_s3_bucket", "aws_eip", "aws_efs_file_system"} {
-		if _, ok := reg.Lookup(tfType); ok {
-			t.Errorf("registry should NOT contain %s", tfType)
+		mapper, ok := reg.Lookup(tfType)
+		if !ok {
+			t.Errorf("registry missing usage mapper %s", tfType)
+			continue
+		}
+		if _, ok := mapper.(UsageMapper); !ok {
+			t.Errorf("%s does not implement UsageMapper", tfType)
 		}
 	}
 }

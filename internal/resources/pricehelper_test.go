@@ -296,6 +296,9 @@ func TestPaidTencentMappersRejectInvalidPriceResponses(t *testing.T) {
 		if _, static := mapper.(StaticMapper); static {
 			continue
 		}
+		if _, usage := mapper.(UsageMapper); usage {
+			continue
+		}
 		mapperType := reflect.TypeOf(mapper)
 		if _, duplicate := seen[mapperType]; duplicate {
 			continue

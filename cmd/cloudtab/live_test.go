@@ -120,7 +120,7 @@ func TestLivePricingSmoke(t *testing.T) {
 	}
 	defer engine.Close()
 
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 4, false)
+	rep, err := priceReport(engine, path, parser.UsageData{Legacy: parser.UsageOverrides{}}, 4, false)
 	if err != nil {
 		t.Fatalf("priceReport returned error: %v", err)
 	}

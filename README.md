@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 62 resource types across four providers.</i>
+  <i>Supports <b>Tencent Cloud</b>, <b>AWS</b>, <b>Alibaba Cloud</b>, and <b>Huawei Cloud</b> — 65 resource types across four providers.</i>
 </p>
 
 <p align="center">
@@ -142,6 +142,105 @@ failing later at auth time. Tencent's `--site` is **not** restricted to this
 list — an unrecognised value is passed through verbatim as a custom root domain
 (e.g. a private-cloud gateway).
 
+### Usage-aware estimates
+
+Terraform describes provisioned infrastructure, but it does not contain monthly
+storage, requests, invocations, egress, or address-hours. For usage-driven
+resources, pass a **versioned** usage file with an explicit quantity and rate:
+
+```yaml
+version: 1
+resources:
+  tencentcloud_cos_bucket.assets:
+    items:
+      standard_storage:
+        quantity: 500
+        unit: GB-month
+        pricing: supplied
+        rate:
+          amount: 0.024
+          per: 1
+          currency: USD
+          source:
+            kind: contract
+            reference: contract-2026-q3
+            as_of: 2026-07-01
+            confidence: high
+      get_requests:
+        quantity: 1000000
+        unit: request
+        pricing: supplied
+        rate:
+          amount: 0.01
+          per: 10000
+          currency: USD
+          source:
+            kind: provider_documentation
+            reference: https://example.com/provider-pricing
+            as_of: 2026-07-28
+            confidence: medium
+      put_requests:
+        quantity: 0              # explicit zero: this dimension does not apply
+        unit: request
+        pricing: supplied
+        rate:
+          amount: 0.01
+          per: 10000
+          currency: USD
+          source:
+            kind: provider_documentation
+            reference: https://example.com/provider-pricing
+            as_of: 2026-07-28
+            confidence: medium
+      internet_egress:
+        quantity: 0              # explicit zero: no internet egress assumed
+        unit: GB
+        pricing: supplied
+        rate:
+          amount: 0.08
+          per: 1
+          currency: USD
+          source:
+            kind: provider_documentation
+            reference: https://example.com/provider-pricing
+            as_of: 2026-07-28
+            confidence: medium
+```
+
+```bash
+cloudtab breakdown --path plan.json --usage-file usage.yml
+cloudtab diff --before old.json --after new.json \
+  --before-usage-file usage.old.yml --after-usage-file usage.new.yml
+```
+
+The calculation is transparent: `monthly = quantity × rate.amount / rate.per`.
+JSON components include the quantity, unit rate, source reference/date/confidence,
+and `provenance.kind: user_rate_estimate`. These are estimates based on inputs you
+control, not provider API quotes or embedded price tables.
+
+Supported usage resources and item IDs:
+
+| Terraform type | Items (canonical unit) |
+|---|---|
+| `tencentcloud_cos_bucket`, `aws_s3_bucket` | `standard_storage` (GB-month), `get_requests` / `put_requests` (request), `internet_egress` (GB) |
+| `tencentcloud_cdn_domain` | `traffic` (GB), `https_requests` (request) |
+| `tencentcloud_cfs_file_system`, `aws_efs_file_system` | `standard_storage` (GB-month) |
+| `tencentcloud_scf_function` | `compute` (GB-second), `invocations` (request), `internet_egress` (GB) |
+| `aws_eip` | `address_hours` (address-hour) |
+
+Versioned usage is strictly validated: unknown fields, addresses not present in the
+loaded plan, usage attached to a non-usage resource, unsupported item IDs/units,
+invalid dates, non-finite numbers, overflowed calculations, and missing rate
+provenance fail before pricing. Every modeled item for that resource must be
+present; supply an explicit zero quantity when a dimension does not apply. This
+prevents an omitted request or egress dimension from being silently treated as free.
+Legacy unversioned `usage.yml` attribute overrides remain supported for compatibility
+but cannot produce source-attributed usage estimates.
+
+If usage is missing, the resource appears in `skipped` with category
+`usage_required`; report totals become **PRICED SUBTOTAL**, and a diff does not treat
+an unpriced side as zero or claim a numeric saving/increase.
+
 ### Performance & reliability flags
 
 Resources in a plan are priced **concurrently**, each request has a **timeout**,
@@ -227,7 +326,7 @@ Sample output:
 |---|---|---|
 | CVM | `tencentcloud_instance` | `cvm:InquiryPriceRunInstances` |
 | CBS | `tencentcloud_cbs_storage` | `cbs:InquiryPriceCreateDisks` |
-| EIP | `tencentcloud_eip` | No official InquiryPrice API (static placeholder + note) |
+| EIP | `tencentcloud_eip` | `vpc:InquiryPriceAllocateAddresses` |
 | CLB | `tencentcloud_clb_instance` | `clb:InquiryPriceCreateLoadBalancer` |
 | MySQL | `tencentcloud_mysql_instance` | `cdb:DescribeDBPrice` |
 | PostgreSQL | `tencentcloud_postgresql_instance` | `postgres:InquiryPriceCreateDBInstances` |
@@ -244,10 +343,10 @@ Sample output:
 | CWP (Host Security) | `tencentcloud_cwp_license_order` | `yunjing:InquiryPriceOpenProVersionPrepaid` |
 | CloudHSM | `tencentcloud_cloudhsm_instance` | `cloudhsm:InquiryPriceBuyVsm` (intl: unavailable — the API returns a placeholder price, not a real quote) |
 | Domain | `tencentcloud_domain_registration` | `domain:DescribeDomainPriceList` |
-| COS | `tencentcloud_cos_bucket` | No InquiryPrice API (static usage-note placeholder) |
-| CDN | `tencentcloud_cdn_domain` | No InquiryPrice API (static usage-note placeholder) |
-| CFS | `tencentcloud_cfs_file_system` | No InquiryPrice API (static usage-note placeholder) |
-| SCF | `tencentcloud_scf_function` | No InquiryPrice API (static usage-note placeholder) |
+| COS | `tencentcloud_cos_bucket` | Explicit usage × source-attributed supplied rates |
+| CDN | `tencentcloud_cdn_domain` | Explicit usage × source-attributed supplied rates |
+| CFS | `tencentcloud_cfs_file_system` | Explicit usage × source-attributed supplied rates |
+| SCF | `tencentcloud_scf_function` | Explicit usage × source-attributed supplied rates |
 | Direct Connect Gateway | `tencentcloud_dc_gateway` | `vpc:InquirePriceCreateDirectConnectGateway` |
 
 ### AWS
@@ -275,6 +374,9 @@ through a `location` filter, so any commercial AWS region is supported.
 | DynamoDB (provisioned) | `aws_dynamodb_table` | Provisioned RCU-hour + WCU-hour × 730 (PAY_PER_REQUEST skipped) |
 | EKS | `aws_eks_cluster` | Control-plane hour (per cluster) × 730 |
 | NAT gateway | `aws_nat_gateway` | Fixed hourly rate (base, **excl.** data-processing) × 730 |
+| S3 | `aws_s3_bucket` | Explicit usage × source-attributed supplied rates |
+| EFS | `aws_efs_file_system` | Explicit storage usage × source-attributed supplied rates |
+| Public IPv4 / EIP | `aws_eip` | Explicit address-hours × source-attributed supplied rates |
 
 AWS prices are quoted in **USD**; a mixed-provider plan shows a per-component
 `Currency` column and only sums a grand total when the currency is uniform.
@@ -330,23 +432,11 @@ Supports all commercial Huawei Cloud regions.
 
 Huawei prices are quoted in **CNY**.
 
-> **Not priced from a plan (by design):** `aws_s3_bucket`, `aws_eip` and
-> `aws_efs_file_system` are purely usage-driven — S3/EFS cost depends on GB
-> stored / requests / egress, and an EIP is only billed while idle/unattached or
-> as a public-IPv4 hourly charge. A Terraform plan carries none of those figures,
-> so any monthly number would be fabricated. They are intentionally left
-> unregistered rather than reported as $0. DynamoDB is priced only in
-> `PROVISIONED` mode (RCU/WCU are in the plan); `PAY_PER_REQUEST` tables are
-> skipped for the same reason.
-
-**Usage-driven Tencent resources (now recognized):** `tencentcloud_cos_bucket`,
-`tencentcloud_cdn_domain`, `tencentcloud_cfs_file_system` and
-`tencentcloud_scf_function` are reported as **zero-cost placeholders with a note**
-(like `aws_s3_bucket` / `aws_eip` / `aws_efs_file_system`) because their cost
-depends on usage not present in a Terraform plan, so any monthly number would be
-fabricated. Real static price tables for these are still on the roadmap. Next:
-more AWS services. See [issues](https://github.com/susunola/cloudtab/issues) or
-contribute a Mapper — [CONTRIBUTING.md](CONTRIBUTING.md).
+> **Usage is never guessed:** COS/CDN/CFS/SCF and S3/EFS/EIP are marked
+> `usage_required` unless a versioned usage file supplies both the quantity and a
+> documented rate. Missing usage is unpriced — never reported as a fake $0.
+> DynamoDB remains plan-priced only in `PROVISIONED` mode; `PAY_PER_REQUEST`
+> requires usage and is skipped.
 
 > **Why not BM / ES / EMR?** These have no *create-instance* pricing API — Bare Metal (`bm`) and Elasticsearch (`es`) can only price an existing instance by ID, and EMR requires a deeply-nested multi-node cluster spec that a Terraform plan doesn't map cleanly. Pricing them from a plan would be guesswork, so they are intentionally out of scope.
 
@@ -433,7 +523,7 @@ Tencent Cloud (current):
 - [x] **M3** — `diff` command + markdown output
 - [x] **M4** — GitHub Action + sticky PR comment
 - [x] **M5** — TencentDB MySQL/Redis, `usage.yml` override wiring (`--usage-file`, `--before-usage-file`, `--after-usage-file`)
-- [x] **M6** — Static usage-note placeholders for COS/CDN/CFS/SCF (no InquiryPrice API; real static price tables still TODO)
+- [x] **M6** — Source-attributed usage estimates for COS/CDN/CFS/SCF and AWS S3/EFS/EIP (explicit quantity + supplied rate; missing usage remains unpriced)
 
 Multi-cloud (current):
 - [x] **M7** — Provider abstraction (`internal/pricing/engine.go` dispatch + lazy backends)

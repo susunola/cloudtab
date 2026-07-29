@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/susunola/cloudtab/internal/parser"
@@ -93,7 +94,7 @@ func TestPriceReportDrainsManyResults(t *testing.T) {
 
 	// Small concurrency amplifies the fan-in pressure the old design deadlocked
 	// under. The test harness's own timeout catches a hang.
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 2, false)
+	rep, err := priceReport(engine, path, parser.UsageData{Legacy: parser.UsageOverrides{}}, 2, false)
 	if err != nil {
 		t.Fatalf("priceReport error: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestPriceReportSortsSkipped(t *testing.T) {
 
 	const n = 50 // > worker count, so completion order would otherwise vary
 	path := writeManyUnsupportedPlan(t, n)
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 8, false)
+	rep, err := priceReport(engine, path, parser.UsageData{Legacy: parser.UsageOverrides{}}, 8, false)
 	if err != nil {
 		t.Fatalf("priceReport error: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestPriceReportConcurrencyFloor(t *testing.T) {
 	defer engine.Close()
 
 	path := writeManyUnsupportedPlan(t, 5)
-	rep, err := priceReport(engine, path, parser.UsageOverrides{}, 0, false) // clamped to 1
+	rep, err := priceReport(engine, path, parser.UsageData{Legacy: parser.UsageOverrides{}}, 0, false) // clamped to 1
 	if err != nil {
 		t.Fatalf("priceReport error: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestPriceBothConcurrentPricesBothPlans(t *testing.T) {
 	defer engine.Close()
 
 	b, a, err := priceBoth(engine, beforePath, afterPath,
-		parser.UsageOverrides{}, parser.UsageOverrides{}, 16, false)
+		parser.UsageData{Legacy: parser.UsageOverrides{}}, parser.UsageData{Legacy: parser.UsageOverrides{}}, 16, false)
 	if err != nil {
 		t.Fatalf("priceBoth error: %v", err)
 	}
@@ -237,6 +238,183 @@ func writeUnsupportedInventoryPlan(t *testing.T, inventory []string, changes map
 	return path
 }
 
+func writeSingleResourcePlan(t *testing.T, address, resourceType string, after map[string]interface{}) string {
+	t.Helper()
+	doc := map[string]interface{}{
+		"format_version": "1.2",
+		"resource_changes": []map[string]interface{}{{
+			"address": address,
+			"type":    resourceType,
+			"name":    "test",
+			"change": map[string]interface{}{
+				"actions": []string{"create"},
+				"after":   after,
+			},
+		}},
+	}
+	blob, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(path, blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func versionedUsage(address, itemID, unit string, quantity, amount, per float64) parser.UsageData {
+	return parser.UsageData{
+		Version: 1,
+		Legacy:  parser.UsageOverrides{},
+		Resources: map[string]parser.UsageResource{
+			address: {Items: map[string]parser.UsageItem{
+				itemID: {
+					Quantity: quantity,
+					Unit:     unit,
+					Pricing:  "supplied",
+					Rate: parser.UsageRate{
+						Amount: amount, Per: per, Currency: "USD",
+						Source: parser.UsageSource{Kind: "contract", Reference: "contract-42", AsOf: "2026-07-01", Confidence: "high"},
+					},
+				},
+			}},
+		},
+	}
+}
+
+func TestPriceReportPricesVersionedUsageWithoutBackend(t *testing.T) {
+	const address = "aws_eip.web"
+	path := writeSingleResourcePlan(t, address, "aws_eip", map[string]interface{}{"sentinel": "plan"})
+	engine, err := pricing.NewEngine(pricing.Config{NoCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+
+	report, err := priceReport(engine, path, versionedUsage(address, "address_hours", "address-hour", 730, 0.005, 1), 1, false)
+	if err != nil {
+		t.Fatalf("priceReport: %v", err)
+	}
+	if len(report.Resources) != 1 || len(report.Resources[0].Components) != 1 {
+		t.Fatalf("report resources = %+v", report.Resources)
+	}
+	if got := report.Resources[0].Components[0].MonthlyCost; got != 3.65 {
+		t.Fatalf("monthly cost = %v, want 3.65", got)
+	}
+	if stats := engine.Stats(); stats.BackendCalls != 0 {
+		t.Fatalf("backend calls = %d, want 0", stats.BackendCalls)
+	}
+}
+
+func TestPriceReportUsageResourceWithoutVersionedUsageIsSkipped(t *testing.T) {
+	const address = "aws_eip.web"
+	path := writeSingleResourcePlan(t, address, "aws_eip", map[string]interface{}{})
+	engine, err := pricing.NewEngine(pricing.Config{NoCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+
+	report, err := priceReport(engine, path, parser.UsageData{Legacy: parser.UsageOverrides{}}, 1, false)
+	if err != nil {
+		t.Fatalf("priceReport: %v", err)
+	}
+	if len(report.Resources) != 0 {
+		t.Fatalf("missing usage emitted priced resources: %+v", report.Resources)
+	}
+	if len(report.Skipped) != 1 || report.Skipped[0].Category != "usage_required" {
+		t.Fatalf("skipped = %+v, want usage_required", report.Skipped)
+	}
+	if stats := engine.Stats(); stats.BackendCalls != 0 {
+		t.Fatalf("backend calls = %d, want 0", stats.BackendCalls)
+	}
+}
+
+func TestPriceReportRejectsUnknownVersionedUsageAddressBeforePricing(t *testing.T) {
+	path := writeSingleResourcePlan(t, "aws_eip.web", "aws_eip", map[string]interface{}{})
+	engine, err := pricing.NewEngine(pricing.Config{NoCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+
+	_, err = priceReport(engine, path, versionedUsage("aws_eip.missing", "address_hours", "address-hour", 730, 1, 1), 1, false)
+	if err == nil || !strings.Contains(err.Error(), "unknown usage resource address") {
+		t.Fatalf("error = %v, want unknown usage resource address", err)
+	}
+	if stats := engine.Stats(); stats.BackendCalls != 0 {
+		t.Fatalf("backend calls = %d, want 0", stats.BackendCalls)
+	}
+}
+
+func TestPriceReportRejectsVersionedUsageForNonUsageMapperBeforePricing(t *testing.T) {
+	const address = "aws_instance.web"
+	path := writeSingleResourcePlan(t, address, "aws_instance", map[string]interface{}{"instance_type": "t3.micro"})
+	engine, err := pricing.NewEngine(pricing.Config{NoCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+
+	_, err = priceReport(engine, path, versionedUsage(address, "address_hours", "address-hour", 1, 1, 1), 1, false)
+	if err == nil || !strings.Contains(err.Error(), "does not accept usage items") {
+		t.Fatalf("error = %v, want non-usage mapper rejection", err)
+	}
+	if stats := engine.Stats(); stats.BackendCalls != 0 {
+		t.Fatalf("backend calls = %d, want preflight rejection before pricing", stats.BackendCalls)
+	}
+}
+
+func TestPriceReportRejectsInvalidVersionedUsageBeforePricing(t *testing.T) {
+	const address = "aws_eip.web"
+	path := writeSingleResourcePlan(t, address, "aws_eip", map[string]interface{}{})
+	tests := []struct {
+		name   string
+		mutate func(*parser.UsageItem)
+	}{
+		{name: "invalid unit", mutate: func(item *parser.UsageItem) { item.Unit = "hour" }},
+		{name: "invalid rate", mutate: func(item *parser.UsageItem) { item.Rate.Per = 0 }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := versionedUsage(address, "address_hours", "address-hour", 1, 1, 1)
+			item := usage.Resources[address].Items["address_hours"]
+			tc.mutate(&item)
+			usage.Resources[address].Items["address_hours"] = item
+
+			engine, err := pricing.NewEngine(pricing.Config{NoCache: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer engine.Close()
+
+			if _, err := priceReport(engine, path, usage, 1, false); err == nil || !strings.Contains(err.Error(), "invalid usage") {
+				t.Fatalf("priceReport error = %v, want strict usage preflight failure", err)
+			}
+			if stats := engine.Stats(); stats.BackendCalls != 0 {
+				t.Fatalf("backend calls = %d, want 0", stats.BackendCalls)
+			}
+		})
+	}
+}
+
+func TestPrepareResourceUsageSeparatesTypedDataFromPlanAttributes(t *testing.T) {
+	r := parser.PlannedResource{Address: "aws_eip.web", After: map[string]interface{}{"sentinel": "plan"}}
+	prepared, typed := prepareResourceUsage(r, versionedUsage(r.Address, "address_hours", "address-hour", 1, 1, 1))
+	if typed == nil {
+		t.Fatal("typed usage was not routed separately")
+	}
+	if len(prepared.After) != 1 || prepared.After["sentinel"] != "plan" {
+		t.Fatalf("versioned usage mutated PlannedResource.After: %#v", prepared.After)
+	}
+
+	prepared, typed = prepareResourceUsage(r, parser.UsageData{Legacy: parser.UsageOverrides{r.Address: {"legacy_usage": 42}}})
+	if typed != nil || prepared.After["legacy_usage"] != 42 {
+		t.Fatalf("legacy override was not merged: prepared=%#v typed=%#v", prepared.After, typed)
+	}
+}
+
 func TestPriceBothUsesFinalInventoryWhileBreakdownUsesChanges(t *testing.T) {
 	beforePath := writeUnsupportedInventoryPlan(t,
 		[]string{"unsupported_thing.stable", "unsupported_thing.removed"},
@@ -260,7 +438,7 @@ func TestPriceBothUsesFinalInventoryWhileBreakdownUsesChanges(t *testing.T) {
 	defer engine.Close()
 
 	before, after, err := priceBoth(engine, beforePath, afterPath,
-		parser.UsageOverrides{}, parser.UsageOverrides{}, 2, false)
+		parser.UsageData{Legacy: parser.UsageOverrides{}}, parser.UsageData{Legacy: parser.UsageOverrides{}}, 2, false)
 	if err != nil {
 		t.Fatalf("priceBoth: %v", err)
 	}
@@ -283,7 +461,7 @@ func TestPriceBothUsesFinalInventoryWhileBreakdownUsesChanges(t *testing.T) {
 		}
 	}
 
-	breakdown, err := priceReport(engine, afterPath, parser.UsageOverrides{}, 2, false)
+	breakdown, err := priceReport(engine, afterPath, parser.UsageData{Legacy: parser.UsageOverrides{}}, 2, false)
 	if err != nil {
 		t.Fatalf("priceReport: %v", err)
 	}

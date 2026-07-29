@@ -250,14 +250,14 @@ func TestRenderersSharedConventions(t *testing.T) {
 		},
 	}
 
-	// 1) Non-diff table renderer: mixed guard + real skip reasons.
+	// 1) Non-diff table renderer: partial subtotal guard + real skip reasons.
 	var tbl bytes.Buffer
 	if err := Render(&tbl, rep, "table"); err != nil {
 		t.Fatalf("Render table: %v", err)
 	}
 	tblOut := tbl.String()
-	if !strings.Contains(strings.ToLower(tblOut), "mixed currencies") {
-		t.Errorf("non-diff table should flag mixed currencies, got:\n%s", tblOut)
+	if !strings.Contains(strings.ToLower(tblOut), "priced subtotal") {
+		t.Errorf("non-diff table should mark skipped-resource totals as a priced subtotal, got:\n%s", tblOut)
 	}
 	if strings.Contains(tblOut, "120.00") {
 		t.Errorf("non-diff table summed mixed currencies (found 120.00):\n%s", tblOut)
@@ -294,7 +294,7 @@ func TestRenderersSharedConventions(t *testing.T) {
 		}
 	}
 
-	// 3) Diff renderers (table + markdown) must honour the same two invariants.
+	// 3) Diff renderers must not claim a complete total when resources were skipped.
 	before := Report{Resources: []ResourceCost{rcCur("tencentcloud_instance.a", "tencentcloud_instance", "CNY", 100)}}
 	after := rep
 	d := ComputeDiff(before, after)
@@ -306,8 +306,8 @@ func TestRenderersSharedConventions(t *testing.T) {
 	if err := RenderDiff(&dtbl, d, "table"); err != nil {
 		t.Fatalf("RenderDiff table: %v", err)
 	}
-	if !strings.Contains(strings.ToLower(dtbl.String()), "mixed currencies") {
-		t.Errorf("diff table should flag mixed currencies, got:\n%s", dtbl.String())
+	if !strings.Contains(strings.ToLower(dtbl.String()), "incomplete") {
+		t.Errorf("diff table should mark skipped-resource totals incomplete, got:\n%s", dtbl.String())
 	}
 	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
 		if !strings.Contains(dtbl.String(), want) {
@@ -319,8 +319,8 @@ func TestRenderersSharedConventions(t *testing.T) {
 	if err := RenderDiff(&dmd, d, "markdown"); err != nil {
 		t.Fatalf("RenderDiff markdown: %v", err)
 	}
-	if !strings.Contains(dmd.String(), "mixed currencies") {
-		t.Errorf("diff markdown should flag mixed currencies, got:\n%s", dmd.String())
+	if !strings.Contains(dmd.String(), "incomplete") {
+		t.Errorf("diff markdown should mark skipped-resource totals incomplete, got:\n%s", dmd.String())
 	}
 	for _, want := range []string{"AuthFailure", "unsupported resource type", "panic pricing"} {
 		if !strings.Contains(dmd.String(), want) {
@@ -369,5 +369,96 @@ func TestRenderDiffMarkdownEscapesSkipReason(t *testing.T) {
 	}
 	if !strings.Contains(out, "aws\\_lb.x\\`y") {
 		t.Errorf("expected escaped underscore and backtick in address, got:\n%s", out)
+	}
+}
+
+func TestComputeDiffDoesNotTreatUnpricedUsageAsZero(t *testing.T) {
+	before := Report{Skipped: []SkippedResource{{
+		Address: "aws_s3_bucket.logs", Type: "aws_s3_bucket",
+		Category: "usage_required", Reason: "usage required",
+	}}}
+	after := Report{Resources: []ResourceCost{rcCur("aws_s3_bucket.logs", "aws_s3_bucket", "USD", 25)}}
+
+	d := ComputeDiff(before, after)
+	if d.TotalsComplete {
+		t.Fatal("TotalsComplete = true with an unpriced before resource")
+	}
+	if len(d.Resources) != 1 || !d.Resources[0].Uncertain {
+		t.Fatalf("diff resources = %+v, want one uncertain resource", d.Resources)
+	}
+	if d.Resources[0].Kind != DiffChange || d.Resources[0].DeltaMonthly != 0 {
+		t.Fatalf("unpriced-to-priced diff = %+v, want uncertain change without numeric delta", d.Resources[0])
+	}
+
+	var markdown bytes.Buffer
+	if err := RenderDiff(&markdown, d, "markdown"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown.String(), "**unknown**") || strings.Contains(markdown.String(), "**+25.00**") {
+		t.Fatalf("markdown claimed a numeric delta for unpriced usage:\n%s", markdown.String())
+	}
+}
+
+func TestComputeDiffDoesNotSubtractDifferentCurrencies(t *testing.T) {
+	before := Report{Resources: []ResourceCost{rcCur("service.main", "service", "USD", 10)}}
+	after := Report{Resources: []ResourceCost{rcCur("service.main", "service", "CNY", 70)}}
+
+	d := ComputeDiff(before, after)
+	if len(d.Resources) != 1 || !d.Resources[0].Uncertain || d.Resources[0].DeltaMonthly != 0 {
+		t.Fatalf("currency-change resource diff = %+v, want uncertain without scalar delta", d.Resources)
+	}
+	if d.BeforeTotal != 0 || d.AfterTotal != 0 || d.DeltaTotal != 0 || d.Currency != "" {
+		t.Fatalf("mixed-currency legacy totals must not contain a numeric sum: %+v", d)
+	}
+	if len(d.TotalsByCurrency) != 2 {
+		t.Fatalf("TotalsByCurrency = %+v, want separate CNY and USD totals", d.TotalsByCurrency)
+	}
+	byCurrency := map[string]CurrencyDiffTotal{}
+	for _, total := range d.TotalsByCurrency {
+		byCurrency[total.Currency] = total
+	}
+	if byCurrency["USD"].Delta != -10 || byCurrency["CNY"].Delta != 70 {
+		t.Fatalf("per-currency totals = %+v", d.TotalsByCurrency)
+	}
+}
+
+func TestFiniteComponentsCannotOverflowReportAggregate(t *testing.T) {
+	report := Report{Resources: []ResourceCost{{
+		Address: "usage.large", Type: "aws_s3_bucket",
+		Components: []CostComponent{
+			{Name: "a", MonthlyCost: 1e308, Currency: "USD"},
+			{Name: "b", MonthlyCost: 1e308, Currency: "USD"},
+		},
+	}}}
+	if err := ValidateFiniteReport(report); err == nil {
+		t.Fatal("ValidateFiniteReport accepted an overflowed aggregate")
+	}
+	var jsonOut bytes.Buffer
+	if err := Render(&jsonOut, report, "json"); err == nil {
+		t.Fatal("Render accepted an overflowed aggregate")
+	}
+	diff := ComputeDiff(Report{}, report)
+	if diff.AggregationError == "" {
+		t.Fatalf("ComputeDiff did not surface aggregate overflow: %+v", diff)
+	}
+	if err := RenderDiff(&jsonOut, diff, "json"); err == nil {
+		t.Fatal("RenderDiff accepted a diff with aggregate overflow")
+	}
+}
+
+func TestRenderSkippedOnlyReportHasNoZeroTotal(t *testing.T) {
+	report := Report{Skipped: []SkippedResource{{
+		Address: "tencentcloud_cos_bucket.assets", Type: "tencentcloud_cos_bucket",
+		Category: "usage_required", Reason: "usage required",
+	}}}
+	var table bytes.Buffer
+	if err := Render(&table, report, "table"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(table.String(), "PRICED SUBTOTAL") {
+		t.Fatalf("skipped-only report should show priced subtotal, got:\n%s", table.String())
+	}
+	if strings.Contains(table.String(), "| 0.00") {
+		t.Fatalf("skipped-only report claimed a known zero total:\n%s", table.String())
 	}
 }

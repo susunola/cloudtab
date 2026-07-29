@@ -820,6 +820,45 @@ release.
 - Action installer and release checksum/provenance shell suites.
 - All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.4.0" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.4.0 — source-attributed usage-aware estimates
+
+Terraform plans do not contain monthly storage, request, invocation, egress, or
+address-hour usage. cloudtab now accepts a strict, versioned usage file that pairs
+explicit quantities with user-supplied rates and their source evidence.
+
+### Supported usage resources
+- Tencent Cloud: COS, CDN, CFS, and SCF.
+- AWS: S3, EFS, and public IPv4/EIP.
+
+All modeled dimensions must be present; a dimension that does not apply must carry
+an explicit zero. Missing usage is categorized `usage_required` and remains
+unpriced — it is never reported as a fabricated zero. The registry now contains
+**65 resource types** (Tencent 26 / AWS 21 / Alibaba 9 / Huawei 9).
+
+### Evidence and strict validation
+Each estimated component records quantity/unit, rate/currency, source kind,
+reference, as-of date, confidence, and `provenance.kind=user_rate_estimate`.
+Versioned YAML rejects unknown fields/addresses, usage attached to non-usage
+resources, incomplete vocabularies, wrong units, invalid provenance, non-finite
+numbers, and item/resource/report aggregate overflow before any backend call.
+Legacy unversioned attribute overrides remain compatible.
+
+### Honest partial output and currency-safe diff
+Reports with skipped resources label their result **PRICED SUBTOTAL**. Diffs no
+longer interpret an unpriced side as zero, and same-address currency changes or
+mixed-currency resource components produce an unknown delta rather than subtracting
+incomparable numbers. JSON adds deterministic per-currency totals and refuses to
+encode non-finite aggregates.
+
+### Tests
+- Strict versioned parser and legacy compatibility.
+- All seven usage vocabularies, explicit-zero completeness, arithmetic,
+  provenance, overflow rejection, no-backend execution, and preflight failures.
+- Partial totals, unpriced-vs-priced diff uncertainty, and currency-change tests.
+- All **65** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

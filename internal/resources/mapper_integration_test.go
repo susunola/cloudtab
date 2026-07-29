@@ -1469,6 +1469,8 @@ var expectedAllTypes = []string{
 	// AWS (21)
 	"aws_db_instance",
 	"aws_docdb_cluster_instance",
+	"aws_eip",
+	"aws_efs_file_system",
 	"aws_dynamodb_table",
 	"aws_ebs_volume",
 	"aws_eks_cluster",
@@ -1485,6 +1487,7 @@ var expectedAllTypes = []string{
 	"aws_opensearch_domain",
 	"aws_rds_cluster_instance",
 	"aws_redshift_cluster",
+	"aws_s3_bucket",
 	// Huawei Cloud (9)
 	"huaweicloud_cce_cluster",
 	"huaweicloud_compute_instance",
@@ -1497,8 +1500,8 @@ var expectedAllTypes = []string{
 	"huaweicloud_vpc_eip",
 	// Tencent Cloud (26 — note: cwp_license_order == tencentcloud_cwp_license_order;
 	// tencentcloud_dcdb_instance is a legacy alias of the dcdb_db/hourdb pair; the
-	// 4 static usage-driven resources below have no InquiryPrice* API and are
-	// registered as StaticMappers returning a zero-cost placeholder + note)
+	// 4 usage-driven resources below require explicit versioned quantities and
+	// supplied rate evidence; they never fabricate a zero-cost placeholder.)
 	"tencentcloud_cbs_storage",
 	"tencentcloud_dc_gateway",
 	"tencentcloud_clb_instance",

@@ -5,16 +5,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 
 	"github.com/olekukonko/tablewriter"
 )
 
+type UsageEvidence struct {
+	Quantity float64 `json:"quantity"`
+	Unit     string  `json:"unit"`
+}
+
+type RateEvidence struct {
+	Amount   float64 `json:"amount"`
+	Per      float64 `json:"per"`
+	Currency string  `json:"currency"`
+}
+
+type SourceEvidence struct {
+	Kind       string `json:"kind"`
+	Reference  string `json:"reference"`
+	AsOf       string `json:"as_of"`
+	Confidence string `json:"confidence"`
+}
+
+type ProvenanceEvidence struct {
+	Kind   string         `json:"kind"`
+	Source SourceEvidence `json:"source"`
+}
+
 type CostComponent struct {
-	Name        string  `json:"name"`
-	Unit        string  `json:"unit"`
-	HourlyCost  float64 `json:"hourly_cost"`
-	MonthlyCost float64 `json:"monthly_cost"`
-	Currency    string  `json:"currency"`
+	Name        string              `json:"name"`
+	Unit        string              `json:"unit"`
+	HourlyCost  float64             `json:"hourly_cost"`
+	MonthlyCost float64             `json:"monthly_cost"`
+	Currency    string              `json:"currency"`
+	Usage       *UsageEvidence      `json:"usage,omitempty"`
+	Rate        *RateEvidence       `json:"rate,omitempty"`
+	Provenance  *ProvenanceEvidence `json:"provenance,omitempty"`
 }
 
 type ResourceCost struct {
@@ -24,9 +51,10 @@ type ResourceCost struct {
 }
 
 type SkippedResource struct {
-	Address string `json:"address"`
-	Type    string `json:"type"`
-	Reason  string `json:"reason"`
+	Address  string `json:"address"`
+	Type     string `json:"type"`
+	Reason   string `json:"reason"`
+	Category string `json:"category,omitempty"`
 }
 
 type Report struct {
@@ -34,7 +62,42 @@ type Report struct {
 	Skipped   []SkippedResource `json:"skipped"`
 }
 
-// Total returns the sum of MonthlyCost over all cost components.
+func checkedAdd(total, value float64) (float64, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	next := total + value
+	if math.IsNaN(next) || math.IsInf(next, 0) {
+		return 0, false
+	}
+	return next, true
+}
+
+// ValidateFiniteReport rejects any component or aggregate that cannot be safely
+// represented as finite JSON/table output.
+func ValidateFiniteReport(r Report) error {
+	byCurrency := map[string]float64{}
+	for _, resource := range r.Resources {
+		resourceTotal := 0.0
+		for _, component := range resource.Components {
+			var ok bool
+			resourceTotal, ok = checkedAdd(resourceTotal, component.MonthlyCost)
+			if !ok {
+				return fmt.Errorf("resource %s has a non-finite monthly cost aggregate", resource.Address)
+			}
+			if component.Currency != "" {
+				byCurrency[component.Currency], ok = checkedAdd(byCurrency[component.Currency], component.MonthlyCost)
+				if !ok {
+					return fmt.Errorf("currency %s has a non-finite monthly cost aggregate", component.Currency)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Total returns the sum of MonthlyCost over all cost components. Callers that
+// accept external reports should call ValidateFiniteReport first.
 func (r Report) Total() float64 {
 	var t float64
 	for _, res := range r.Resources {
@@ -53,6 +116,9 @@ func ResourceCostTotal(rc ResourceCost) float64 {
 }
 
 func Render(w io.Writer, r Report, format string) error {
+	if err := ValidateFiniteReport(r); err != nil {
+		return err
+	}
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -81,14 +147,26 @@ func renderTable(w io.Writer, r Report) error {
 			t.Append([]string{addr, c.Name, fmt.Sprintf("%.2f", c.MonthlyCost), c.Currency})
 		}
 	}
+	partial := len(r.Skipped) > 0
 	if len(r.Resources) == 0 {
-		// No priced resources: there is no currency to total, so show a flat
-		// zero rather than a misleading "mixed currencies" label.
-		t.SetFooter([]string{"", "TOTAL", "0.00", ""})
+		if partial {
+			t.SetFooter([]string{"", "PRICED SUBTOTAL", "-", ""})
+		} else {
+			// An actually empty plan has a known zero total.
+			t.SetFooter([]string{"", "TOTAL", "0.00", ""})
+		}
 	} else if cur, uniform := uniformCurrency(r); uniform {
-		t.SetFooter([]string{"", "TOTAL", fmt.Sprintf("%.2f", r.Total()), cur})
+		label := "TOTAL"
+		if partial {
+			label = "PRICED SUBTOTAL"
+		}
+		t.SetFooter([]string{"", label, fmt.Sprintf("%.2f", r.Total()), cur})
 	} else {
-		t.SetFooter([]string{"", "TOTAL (mixed currencies)", "-", ""})
+		label := "TOTAL (mixed currencies)"
+		if partial {
+			label = "PRICED SUBTOTAL (mixed currencies)"
+		}
+		t.SetFooter([]string{"", label, "-", ""})
 	}
 	t.Render()
 	if len(r.Skipped) > 0 {

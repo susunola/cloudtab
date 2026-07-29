@@ -27,6 +27,12 @@ type StaticMapper interface {
 	Estimate(r parser.PlannedResource) ([]output.CostComponent, error)
 }
 
+// UsageMapper is an optional extension for resources priced entirely from typed
+// usage and user-supplied rates. It never requires a provider pricing backend.
+type UsageMapper interface {
+	EstimateUsage(r parser.PlannedResource, usage parser.UsageResource) ([]output.CostComponent, error)
+}
+
 type Registry struct {
 	m map[string]Mapper
 }
@@ -92,10 +98,10 @@ func DefaultRegistry() *Registry {
 		// on actual GB stored / requests / invocations, none of which is in the
 		// plan). Registered as StaticMappers returning a zero-cost placeholder +
 		// note — never call the pricing engine, never fabricate.
-		r.Register("tencentcloud_cos_bucket", &COSBucket{})
-		r.Register("tencentcloud_cdn_domain", &CDNDomain{})
-		r.Register("tencentcloud_cfs_file_system", &CFSFileSystem{})
-		r.Register("tencentcloud_scf_function", &SCFFunction{})
+		r.Register("tencentcloud_cos_bucket", newCOSBucket())
+		r.Register("tencentcloud_cdn_domain", newCDNDomain())
+		r.Register("tencentcloud_cfs_file_system", newCFSFileSystem())
+		r.Register("tencentcloud_scf_function", newSCFFunction())
 
 		// --- Huawei Cloud (priced via BSS ListOnDemandResourceRatings) ---
 		r.Register("huaweicloud_compute_instance", &HuaweiECS{})
@@ -140,13 +146,11 @@ func DefaultRegistry() *Registry {
 		// Fixed-hourly-fee resources (usage portion excluded and labelled):
 		r.Register("aws_eks_cluster", &AWSEKSCluster{})
 		r.Register("aws_nat_gateway", &AWSNATGateway{})
-		// NOTE: aws_s3_bucket, aws_eip and aws_efs_file_system are intentionally
-		// NOT registered. Their cost is purely usage-driven (S3: GB stored /
-		// requests / egress; EIP: idle/unattached or public-IPv4 hourly; EFS:
-		// GB stored — the file system size is not in the plan). A Terraform plan
-		// carries none of those usage figures, so any monthly number would be
-		// fabricated. aws_dynamodb_table in PAY_PER_REQUEST mode is skipped for
-		// the same reason (handled inside its mapper). See docs/design.md.
+		// Usage-only AWS resources are priced locally only when versioned usage
+		// supplies both quantity and rate evidence.
+		r.Register("aws_s3_bucket", newAWSS3Bucket())
+		r.Register("aws_efs_file_system", newAWSEFSFileSystem())
+		r.Register("aws_eip", newAWSEIP())
 		defaultRegistryInstance = r
 	})
 	return defaultRegistryInstance
