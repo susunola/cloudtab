@@ -241,6 +241,61 @@ If usage is missing, the resource appears in `skipped` with category
 `usage_required`; report totals become **PRICED SUBTOTAL**, and a diff does not treat
 an unpriced side as zero or claim a numeric saving/increase.
 
+### CI cost policy gate
+
+A policy turns the completed report into a deterministic CI decision while keeping
+each currency separate:
+
+```yaml
+version: 1
+limits:
+  USD:
+    max_monthly_increase: 250
+    max_total: 5000
+  CNY:
+    max_monthly_increase: 1500
+    max_total: 30000
+fail_on_skipped: true
+min_coverage: 0.95
+```
+
+```bash
+cloudtab diff --before old.json --after new.json \
+  --policy-file examples/policy.yml --format markdown
+
+# Direct flags override the same rule/currency from the file.
+cloudtab diff --before old.json --after new.json \
+  --max-monthly-increase USD=250 \
+  --max-total CNY=30000 \
+  --fail-on-skipped --min-coverage 0.95
+```
+
+Rules:
+
+- `max_total` checks the current breakdown or the `after` side of a diff.
+- `max_monthly_increase` compares before/after totals for that currency. On a
+  breakdown it fails with “baseline required” rather than silently ignoring the rule.
+- `fail_on_skipped` evaluates the current report, or both sides of a diff.
+- `min_coverage` is `priced / (priced + skipped)`; an empty plan has 100% coverage.
+- CNY, USD, and any other currencies are evaluated independently. cloudtab never
+  invents or downloads an exchange rate.
+
+Policy YAML is strict and versioned. Unknown keys, duplicate normalized currencies,
+negative/non-finite thresholds, invalid coverage, and empty policies fail before the
+pricing engine starts. Threshold comparisons tolerate only float representation noise.
+
+Exit codes are stable for CI:
+
+| Code | Meaning |
+|---:|---|
+| `0` | Pricing completed and all enabled policy rules passed (or no policy enabled). |
+| `1` | CLI/configuration, plan, pricing, or rendering error. |
+| `2` | A complete report was rendered, but the cost policy failed. |
+
+Policy-enabled JSON includes a `policy` object with deterministic violations. Table
+and markdown output append a policy section. The GitHub Action accepts
+`policy-file`; on a violation it posts the PR comment first and then fails the job.
+
 ### Performance & reliability flags
 
 Resources in a plan are priced **concurrently**, each request has a **timeout**,

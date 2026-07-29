@@ -26,6 +26,10 @@ inputs:
     description: "cloudtab release to use (v0.3.20+ with checksums). 'latest' installs the newest published binary."
     required: false
     default: "latest"
+  policy-file:
+    description: "Repository-relative path to a strict version 1 cloudtab cost policy."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -57,8 +61,13 @@ runs:
         HUAWEI_ACCESS_KEY_ID: ${{ env.HUAWEI_ACCESS_KEY_ID }}
         HUAWEI_SECRET_ACCESS_KEY: ${{ env.HUAWEI_SECRET_ACCESS_KEY }}
         HUAWEI_PROJECT_ID: ${{ env.HUAWEI_PROJECT_ID }}
+        CLOUDTAB_POLICY_FILE: ${{ inputs.policy-file }}
       run: |
         set -euo pipefail
+        POLICY_ARGS=()
+        if [ -n "$CLOUDTAB_POLICY_FILE" ]; then
+          POLICY_ARGS+=(--policy-file "$GITHUB_WORKSPACE/$CLOUDTAB_POLICY_FILE")
+        fi
         terraform init -input=false -no-color
         terraform plan -out=plan.new.tfplan -no-color
         terraform show -json plan.new.tfplan > plan.new.json
@@ -78,16 +87,26 @@ runs:
             fi
           )
           if [ -f plan.old.json ]; then
+            status=0
             cloudtab diff --before plan.old.json --after plan.new.json \
-              --region "${{ inputs.region }}" --format markdown > comment.md
+              --region "${{ inputs.region }}" --format markdown \
+              "${POLICY_ARGS[@]}" > comment.md || status=$?
           else
             # No baseline plan (e.g. first run): fall back to a plain breakdown.
-            cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
+            status=0
+            cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" \
+              "${POLICY_ARGS[@]}" > comment.md || status=$?
           fi
         else
-          cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" > comment.md
+          status=0
+          cloudtab breakdown --path plan.new.json --region "${{ inputs.region }}" \
+            "${POLICY_ARGS[@]}" > comment.md || status=$?
+        fi
+        if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+          exit "$status"
         fi
         echo "comment_file=comment.md" >> "$GITHUB_OUTPUT"
+        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
 
     - name: Post PR comment
       if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
@@ -95,3 +114,8 @@ runs:
       with:
         header: cloudtab
         path: ${{ inputs.path }}/${{ steps.run.outputs.comment_file }}
+
+    - name: Enforce cloudtab cost policy
+      if: steps.run.outputs.exit_code == '2'
+      shell: bash
+      run: exit 2

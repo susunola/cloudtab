@@ -1,0 +1,10 @@
+version: 1
+limits:
+  USD:
+    max_monthly_increase: 250
+    max_total: 5000
+  CNY:
+    max_monthly_increase: 1500
+    max_total: 30000
+fail_on_skipped: true
+min_coverage: 0.95

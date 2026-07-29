@@ -348,3 +348,47 @@ func TestBreakdownWithCredsPricing(t *testing.T) {
 		t.Errorf("with credentials, expected at least one priced resource, got none (all skipped: %+v)", rep.Skipped)
 	}
 }
+
+func TestBreakdownPolicyFailureRendersJSONAndExitsTwo(t *testing.T) {
+	out, serr, code := run(t, "breakdown",
+		"--path", fixture(t, "example.plan.json"),
+		"--format", "json", "--no-cache", "--timeout", "1s",
+		"--fail-on-skipped")
+	if code != 2 {
+		t.Fatalf("policy failure exit code = %d, want 2; stderr=%s", code, serr)
+	}
+	var document map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &document); err != nil {
+		t.Fatalf("policy-failed stdout is not valid JSON: %v\n%s", err, out)
+	}
+	policyValue, ok := document["policy"].(map[string]interface{})
+	if !ok || policyValue["status"] != "fail" {
+		t.Fatalf("JSON policy = %#v, want failed policy result", document["policy"])
+	}
+}
+
+func TestDiffPolicyFailureRendersMarkdownAndExitsTwo(t *testing.T) {
+	out, serr, code := run(t, "diff",
+		"--before", fixture(t, "example.plan.json"),
+		"--after", fixture(t, "static_eip_plan.json"),
+		"--format", "markdown", "--no-cache", "--timeout", "1s",
+		"--fail-on-skipped")
+	if code != 2 {
+		t.Fatalf("diff policy failure exit code = %d, want 2; stderr=%s", code, serr)
+	}
+	if !strings.Contains(out, "Cost policy: FAIL") || !strings.Contains(out, "skipped resource") {
+		t.Fatalf("markdown did not include policy violation:\n%s", out)
+	}
+}
+
+func TestInvalidPolicyThresholdExitsOneBeforePricing(t *testing.T) {
+	_, serr, code := run(t, "breakdown",
+		"--path", fixture(t, "example.plan.json"),
+		"--format", "json", "--max-total", "USD=invalid")
+	if code != 1 {
+		t.Fatalf("invalid policy exit code = %d, want 1", code)
+	}
+	if !strings.Contains(serr, "load cost policy") {
+		t.Fatalf("invalid policy error = %q", serr)
+	}
+}

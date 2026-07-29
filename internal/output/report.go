@@ -60,6 +60,7 @@ type SkippedResource struct {
 type Report struct {
 	Resources []ResourceCost    `json:"resources"`
 	Skipped   []SkippedResource `json:"skipped"`
+	Policy    any               `json:"policy,omitempty"`
 }
 
 func checkedAdd(total, value float64) (float64, bool) {

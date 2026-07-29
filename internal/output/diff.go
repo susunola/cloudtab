@@ -48,6 +48,7 @@ type DiffReport struct {
 	TotalsByCurrency []CurrencyDiffTotal `json:"totals_by_currency,omitempty"`
 	TotalsComplete   bool                `json:"totals_complete"`
 	AggregationError string              `json:"aggregation_error,omitempty"`
+	Policy           any                 `json:"policy,omitempty"`
 }
 
 func resourceMonthlyCurrency(resource ResourceCost) (float64, string, bool) {

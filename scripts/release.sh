@@ -859,6 +859,42 @@ encode non-finite aggregates.
 - Partial totals, unpriced-vs-priced diff uncertainty, and currency-change tests.
 - All **65** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.5.0" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.5.0 — deterministic CI cost policy gates
+
+cloudtab can now render a complete report and then enforce repository-owned cost
+rules with stable CI exit semantics.
+
+### Versioned policy
+A strict version 1 YAML policy supports per-currency `max_total` and
+`max_monthly_increase`, plus `fail_on_skipped` and `min_coverage`. Direct repeatable
+CLI flags (`--max-total CURRENCY=AMOUNT`, `--max-monthly-increase`,
+`--fail-on-skipped`, `--min-coverage`) override file values.
+
+All monetary rules aggregate raw components by normalized currency. CNY and USD are
+never summed or converted, missing currencies are zero for their own rule, and
+float comparison tolerates representation noise without hiding meaningful overages.
+Policy files reject unknown fields, duplicate normalized currencies, invalid limits,
+and empty rule sets before the pricing engine starts.
+
+### CI contract
+- Exit `0`: pricing and policy passed (or no policy enabled).
+- Exit `1`: CLI/configuration, pricing, plan, or rendering failure.
+- Exit `2`: report rendered successfully, policy failed.
+
+Policy-enabled JSON includes a deterministic `policy` result; table and markdown
+append the same violations. The GitHub Action accepts `policy-file`, preserves exit
+`2`, posts the sticky PR comment, and only then fails the job. Operational failures
+still stop before comment posting.
+
+### Tests
+- Strict parser, file/CLI merge, per-currency aggregation, threshold tolerance,
+  coverage/skips, deterministic violations, and typed exit error.
+- Real-binary integration tests for JSON/markdown output and exit codes 1/2.
+- Action ordering/static contract shell test.
+- All **65** mappers pass `go vet` and `go test -race` (7/7 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi

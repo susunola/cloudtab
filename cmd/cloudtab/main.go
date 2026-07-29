@@ -38,6 +38,7 @@ import (
 	"github.com/susunola/cloudtab/internal/logger"
 	"github.com/susunola/cloudtab/internal/output"
 	"github.com/susunola/cloudtab/internal/parser"
+	"github.com/susunola/cloudtab/internal/policy"
 	"github.com/susunola/cloudtab/internal/pricing"
 	"github.com/susunola/cloudtab/internal/resources"
 )
@@ -68,22 +69,27 @@ func main() {
 
 	// -- breakdown --
 	var (
-		path        string
-		region      string
-		format      string
-		usageFile   string
-		noCache     bool
-		cacheDir    string
-		site        string
-		awsSite     string
-		alibabaSite string
-		huaweiSite  string
-		concurrency int
-		timeout     time.Duration
-		maxRetries  int
-		failOnError bool
-		cacheTTL    time.Duration
-		debug       bool
+		path                string
+		region              string
+		format              string
+		usageFile           string
+		noCache             bool
+		cacheDir            string
+		site                string
+		awsSite             string
+		alibabaSite         string
+		huaweiSite          string
+		concurrency         int
+		timeout             time.Duration
+		maxRetries          int
+		failOnError         bool
+		cacheTTL            time.Duration
+		debug               bool
+		policyFile          string
+		maxTotals           []string
+		maxMonthlyIncreases []string
+		failOnSkipped       bool
+		minCoverage         float64
 	)
 	breakdown := &cobra.Command{
 		Use:           "breakdown",
@@ -91,10 +97,18 @@ func main() {
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			logger.SetDebug(debug)
 			if format != "table" && format != "json" {
 				return fmt.Errorf("unknown format %q (want table or json)", format)
+			}
+			policyConfig, policyEnabled, err := loadPolicyConfig(
+				policyFile, maxTotals, maxMonthlyIncreases,
+				failOnSkipped, cmd.Flags().Changed("fail-on-skipped"),
+				minCoverage, cmd.Flags().Changed("min-coverage"),
+			)
+			if err != nil {
+				return fmt.Errorf("load cost policy: %w", err)
 			}
 			engine, err := newEngine(region, site, awsSite, alibabaSite, huaweiSite, noCache, cacheDir, timeout, maxRetries, cacheTTL)
 			if err != nil {
@@ -111,7 +125,23 @@ func main() {
 				return err
 			}
 			logRunSummary(engine, &rep)
-			return output.Render(os.Stdout, rep, format)
+			var policyErr error
+			if policyEnabled {
+				result, evalErr := policy.EvaluateBreakdown(policyConfig, rep)
+				var violationErr *policy.ViolationError
+				if evalErr != nil && !errors.As(evalErr, &violationErr) {
+					return evalErr
+				}
+				rep.Policy = result
+				policyErr = evalErr
+			}
+			if err := output.Render(os.Stdout, rep, format); err != nil {
+				return err
+			}
+			if policyEnabled && format != "json" {
+				renderPolicyResult(os.Stdout, rep.Policy.(policy.Result))
+			}
+			return policyErr
 		},
 	}
 	breakdown.Flags().StringVar(&path, "path", "plan.json", "Path to terraform plan.json")
@@ -130,27 +160,37 @@ func main() {
 	breakdown.Flags().BoolVar(&failOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
 	breakdown.Flags().DurationVar(&cacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
 	breakdown.Flags().BoolVar(&debug, "debug", false, "Emit diagnostic logs to stderr (cache hits/misses, per-call backend latency, retries)")
+	breakdown.Flags().StringVar(&policyFile, "policy-file", "", "Path to strict version 1 cost policy YAML")
+	breakdown.Flags().StringArrayVar(&maxTotals, "max-total", nil, "Maximum monthly total per currency (repeatable CURRENCY=AMOUNT)")
+	breakdown.Flags().StringArrayVar(&maxMonthlyIncreases, "max-monthly-increase", nil, "Maximum monthly increase per currency (requires diff baseline)")
+	breakdown.Flags().BoolVar(&failOnSkipped, "fail-on-skipped", false, "Fail policy when any resource is skipped")
+	breakdown.Flags().Float64Var(&minCoverage, "min-coverage", 0, "Minimum priced-resource ratio in [0,1]")
 
 	// -- diff --
 	var (
-		before          string
-		after           string
-		diffFmt         string
-		diffReg         string
-		beforeUsageFile string
-		afterUsageFile  string
-		diffNoCache     bool
-		diffCacheDir    string
-		diffSite        string
-		diffAWSSite     string
-		diffAlibabaSite string
-		diffHuaweiSite  string
-		diffConcurrency int
-		diffTimeout     time.Duration
-		diffMaxRetries  int
-		diffFailOnError bool
-		diffCacheTTL    time.Duration
-		diffDebug       bool
+		before            string
+		after             string
+		diffFmt           string
+		diffReg           string
+		beforeUsageFile   string
+		afterUsageFile    string
+		diffNoCache       bool
+		diffCacheDir      string
+		diffSite          string
+		diffAWSSite       string
+		diffAlibabaSite   string
+		diffHuaweiSite    string
+		diffConcurrency   int
+		diffTimeout       time.Duration
+		diffMaxRetries    int
+		diffFailOnError   bool
+		diffCacheTTL      time.Duration
+		diffDebug         bool
+		diffPolicyFile    string
+		diffMaxTotals     []string
+		diffMaxIncreases  []string
+		diffFailOnSkipped bool
+		diffMinCoverage   float64
 	)
 	diff := &cobra.Command{
 		Use:           "diff",
@@ -158,10 +198,18 @@ func main() {
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			logger.SetDebug(diffDebug)
 			if diffFmt != "table" && diffFmt != "json" && diffFmt != "markdown" {
 				return fmt.Errorf("unknown format %q (want table, json or markdown)", diffFmt)
+			}
+			policyConfig, policyEnabled, err := loadPolicyConfig(
+				diffPolicyFile, diffMaxTotals, diffMaxIncreases,
+				diffFailOnSkipped, cmd.Flags().Changed("fail-on-skipped"),
+				diffMinCoverage, cmd.Flags().Changed("min-coverage"),
+			)
+			if err != nil {
+				return fmt.Errorf("load cost policy: %w", err)
 			}
 			engine, err := newEngine(diffReg, diffSite, diffAWSSite, diffAlibabaSite, diffHuaweiSite, diffNoCache, diffCacheDir, diffTimeout, diffMaxRetries, diffCacheTTL)
 			if err != nil {
@@ -196,7 +244,23 @@ func main() {
 			if err != nil {
 				return err
 			}
-			return output.RenderDiff(os.Stdout, diffReport, diffFmt)
+			var policyErr error
+			if policyEnabled {
+				result, evalErr := policy.EvaluateDiff(policyConfig, b, a)
+				var violationErr *policy.ViolationError
+				if evalErr != nil && !errors.As(evalErr, &violationErr) {
+					return evalErr
+				}
+				diffReport.Policy = result
+				policyErr = evalErr
+			}
+			if err := output.RenderDiff(os.Stdout, diffReport, diffFmt); err != nil {
+				return err
+			}
+			if policyEnabled && diffFmt != "json" {
+				renderPolicyResult(os.Stdout, diffReport.Policy.(policy.Result))
+			}
+			return policyErr
 		},
 	}
 	diff.Flags().StringVar(&before, "before", "", "Path to baseline plan.json (required)")
@@ -217,6 +281,11 @@ func main() {
 	diff.Flags().BoolVar(&diffFailOnError, "fail-on-error", false, "Fail the whole report if any resource pricing errors (default: skip failed resources and continue)")
 	diff.Flags().DurationVar(&diffCacheTTL, "cache-ttl", 0, "Price cache entry TTL (default 24h)")
 	diff.Flags().BoolVar(&diffDebug, "debug", false, "Emit diagnostic logs to stderr (cache hits/misses, per-call backend latency, retries)")
+	diff.Flags().StringVar(&diffPolicyFile, "policy-file", "", "Path to strict version 1 cost policy YAML")
+	diff.Flags().StringArrayVar(&diffMaxTotals, "max-total", nil, "Maximum after monthly total per currency (repeatable CURRENCY=AMOUNT)")
+	diff.Flags().StringArrayVar(&diffMaxIncreases, "max-monthly-increase", nil, "Maximum monthly increase per currency (repeatable CURRENCY=AMOUNT)")
+	diff.Flags().BoolVar(&diffFailOnSkipped, "fail-on-skipped", false, "Fail policy when either report has skipped resources")
+	diff.Flags().Float64Var(&diffMinCoverage, "min-coverage", 0, "Minimum priced-resource ratio in [0,1] for each side")
 	_ = diff.MarkFlagRequired("before")
 	_ = diff.MarkFlagRequired("after")
 
@@ -242,6 +311,10 @@ func main() {
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
 		os.Exit(1)
 	}
 }
