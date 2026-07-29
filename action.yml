@@ -23,7 +23,7 @@ inputs:
     required: false
     default: "true"
   cloudtab-version:
-    description: "cloudtab release to use. 'latest' installs the newest published binary."
+    description: "cloudtab release to use (v0.3.20+ with checksums). 'latest' installs the newest published binary."
     required: false
     default: "latest"
 
@@ -37,19 +37,11 @@ runs:
 
     - name: Install cloudtab
       shell: bash
+      env:
+        CLOUDTAB_VERSION: ${{ inputs.cloudtab-version }}
       run: |
         set -euo pipefail
-        VER="${{ inputs.cloudtab-version }}"
-        if [ "$VER" = "latest" ]; then
-          VER=$(curl -sfL https://api.github.com/repos/susunola/cloudtab/releases/latest | \
-                sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
-        fi
-        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-        ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64
-        URL="https://github.com/susunola/cloudtab/releases/download/${VER}/cloudtab_${OS}_${ARCH}.tar.gz"
-        echo "Downloading $URL"
-        curl -sfL "$URL" | tar -xz -C /usr/local/bin cloudtab
-        cloudtab --help >/dev/null
+        "$GITHUB_ACTION_PATH/scripts/install-action.sh" "$CLOUDTAB_VERSION"
 
     - name: Run cloudtab
       id: run

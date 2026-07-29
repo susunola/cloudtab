@@ -143,13 +143,17 @@ func (RedisInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 		monthly = priceBase * hoursPerMonth
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("Redis (type %v, %vMB)", req.Params["TypeId"], req.Params["MemSize"]),
 		Unit:        map[string]string{"0": "HOUR", "1": "MONTH"}[billingMode],
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    currency,
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }
 
 func normalizeTencentAmount(price float64, amountUnit string) float64 {

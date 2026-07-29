@@ -103,11 +103,15 @@ func (CBSStorage) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 	// when the API did not populate a discount field.
 	unitPrice := preferDiscount(dp.UnitPriceDiscount, dp.UnitPrice)
 	monthly, hourly := monthlyFromPrice(dp.ChargeUnit, unitPrice, dp.DiscountPrice)
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("CBS %v (%vGB)", req.Params["DiskType"], req.Params["DiskSize"]),
 		Unit:        dp.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    currency,
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

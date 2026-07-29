@@ -90,11 +90,15 @@ func (GAAPProxy) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCompo
 	// Prefer the discounted daily price; fall back to the original.
 	daily = preferDiscount(daily, orig)
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("GAAP proxy (%v Mbps)", req.Params["Bandwidth"]),
 		Unit:        "DAY",
 		HourlyCost:  0,
 		MonthlyCost: daily * daysPerMonth,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

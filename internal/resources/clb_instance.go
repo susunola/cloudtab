@@ -128,6 +128,9 @@ func (CLBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 	if hasClbItemPrice(price.LcuPrice) {
 		comps = append(comps, clbComponent("CLB LCU", price.LcuPrice, currency))
 	}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
 	return comps, nil
 }
 

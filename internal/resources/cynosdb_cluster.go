@@ -196,6 +196,9 @@ func (CynosDBCluster) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 		comps = append(comps, cynosComponent("TDSQL-C storage", pb.StoragePrice,
 			strings.HasPrefix(storagePayMode, "PREPAID"), cur))
 	}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
 	return comps, nil
 }
 

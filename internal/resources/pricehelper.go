@@ -3,6 +3,7 @@ package resources
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/susunola/cloudtab/internal/output"
@@ -37,6 +38,38 @@ func tencentCurrency(expected string) string {
 		return expected
 	}
 	return "CNY"
+}
+
+func validateTencentPaidPrice(raw []byte, comps []output.CostComponent) error {
+	type businessError struct {
+		Code    string `json:"Code"`
+		Message string `json:"Message"`
+	}
+	var envelope struct {
+		Error    *businessError `json:"Error"`
+		Response struct {
+			Error *businessError `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return err
+	}
+	apiErr := envelope.Error
+	if envelope.Response.Error != nil {
+		apiErr = envelope.Response.Error
+	}
+	if apiErr != nil {
+		return fmt.Errorf("tencent: pricing API business error %s: %s", apiErr.Code, apiErr.Message)
+	}
+	for _, comp := range comps {
+		if comp.HourlyCost > 0 && !math.IsNaN(comp.HourlyCost) && !math.IsInf(comp.HourlyCost, 0) {
+			return nil
+		}
+		if comp.MonthlyCost > 0 && !math.IsNaN(comp.MonthlyCost) && !math.IsInf(comp.MonthlyCost, 0) {
+			return nil
+		}
+	}
+	return fmt.Errorf("tencent: price response carried no positive finite paid cost; refusing to report a fabricated zero")
 }
 
 // monthlyFromPrice converts an InquiryPrice* discounted price into a monthly

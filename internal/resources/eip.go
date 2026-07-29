@@ -105,11 +105,15 @@ func (EIP) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComponent, 
 		monthly = rate * hoursPerMonth
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("EIP (%v Mbps, %v)", req.Params["InternetMaxBandwidthOut"], chargeType),
 		Unit:        ap.ChargeUnit,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

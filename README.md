@@ -72,6 +72,23 @@ cloudtab breakdown --path plan.json --region ap-guangzhou
 > A pure-Tencent plan needs **no** AWS/Alibaba/Huawei credentials — each backend is only
 > initialised the first time a resource from that provider is priced.
 
+### Compare complete before/after inventories
+
+```bash
+cloudtab diff --before plan.old.json --after plan.new.json --format markdown
+```
+
+`diff` reads each plan's recursive `planned_values` inventory, including unchanged
+resources and resources in child modules. This means updates are measured against
+the old resource cost and deletions appear as savings; they are not misreported as
+full additions or silently omitted. When a legacy/synthetic plan has no
+`planned_values`, cloudtab falls back to its `resource_changes` list. Provider
+aliases are resolved per resource through Terraform's exact `provider_config_key`,
+so two aliases of the same cloud can safely use different regions.
+
+`breakdown` intentionally remains change-oriented: it prices create/update actions
+from `resource_changes`, preserving the existing "what this plan changes" output.
+
 ### Chinese-mainland vs International site
 
 Tencent Cloud runs **two independent sites** with separate account systems: the
@@ -354,6 +371,13 @@ jobs:
 ```
 
 A sticky PR comment like [this](examples/pr-comment.md) shows up on every PR that changes `.tf` files.
+
+The Action downloads a release archive to a temporary directory and verifies it
+against the release's `checksums.txt` before extraction. This verification is
+mandatory and fails closed; `cloudtab-version` must therefore be **v0.3.20 or
+newer** (older releases predate signed-off checksum manifests). `latest` is parsed
+from GitHub's release JSON and validated as a semantic version before it is used in
+a download URL.
 
 ## Local quality gate
 

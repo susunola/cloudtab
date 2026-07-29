@@ -24,6 +24,12 @@ REPO=cloudtab
 VERSION="${1:?VERSION required (e.g. v0.3.1)}"
 REF="${2:-HEAD}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+ASSETS=(
+  cloudtab_darwin_amd64.tar.gz
+  cloudtab_darwin_arm64.tar.gz
+  cloudtab_linux_amd64.tar.gz
+  cloudtab_linux_arm64.tar.gz
+)
 
 if [[ -z "$TOKEN" ]]; then
   echo "ERROR: set GITHUB_TOKEN (or GH_TOKEN) with repo scope." >&2
@@ -38,18 +44,53 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if ! SHA=$(git -C "$ROOT" rev-parse -q --verify "${REF}^{commit}"); then
+  echo "ERROR: cannot resolve REF $REF to a commit" >&2
+  exit 1
+fi
+
+LOCAL_TAG_SHA=$(git -C "$ROOT" rev-parse -q --verify "refs/tags/${VERSION}^{commit}" 2>/dev/null || true)
+if [[ -n "$LOCAL_TAG_SHA" && "$LOCAL_TAG_SHA" != "$SHA" ]]; then
+  echo "ERROR: local tag $VERSION points to $LOCAL_TAG_SHA; it does not point to $SHA" >&2
+  exit 1
+fi
+
+REMOTE="https://x-access-token:${TOKEN}@github.com/${OWNER}/${REPO}.git"
+REMOTE_TAGS=$(git -C "$ROOT" ls-remote --tags --quiet "$REMOTE" \
+  "refs/tags/$VERSION" "refs/tags/$VERSION^{}")
+REMOTE_TAG_SHA=""
+REMOTE_TAG_PEELED_SHA=""
+while read -r remote_sha remote_ref; do
+  case "$remote_ref" in
+    "refs/tags/$VERSION") REMOTE_TAG_SHA="$remote_sha" ;;
+    "refs/tags/$VERSION^{}") REMOTE_TAG_PEELED_SHA="$remote_sha" ;;
+  esac
+done <<< "$REMOTE_TAGS"
+REMOTE_TAG_SHA="${REMOTE_TAG_PEELED_SHA:-$REMOTE_TAG_SHA}"
+if [[ -n "$REMOTE_TAG_SHA" && "$REMOTE_TAG_SHA" != "$SHA" ]]; then
+  echo "ERROR: remote tag $VERSION points to $REMOTE_TAG_SHA; it does not point to $SHA" >&2
+  exit 1
+fi
+
 OUT="$(mktemp -d)"
+WT="$OUT/worktree"
+WORKTREE_ADDED=0
+cleanup() {
+  if [[ "$WORKTREE_ADDED" == "1" ]]; then
+    git -C "$ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$OUT"
+}
+trap cleanup EXIT
+
 echo "Build dir: $OUT"
 
 # ---- 1) Build 4 binaries ------------------------------------------------
-SRC="$ROOT"
-if [[ "$REF" != "HEAD" ]]; then
-  WT="$OUT/worktree"
-  git -C "$ROOT" worktree add "$WT" "$REF" >/dev/null
-  SRC="$WT"
-fi
+git -C "$ROOT" worktree add --detach "$WT" "$SHA" >/dev/null
+WORKTREE_ADDED=1
+SRC="$WT"
 
-echo "==> Building 4 binaries for $VERSION from $REF"
+echo "==> Building 4 binaries for $VERSION from $SHA"
 for os in darwin linux; do
   for arch in amd64 arm64; do
     bin="$OUT/${os}_${arch}/cloudtab"
@@ -65,15 +106,14 @@ for os in darwin linux; do
     tar -czf "$OUT/cloudtab_${os}_${arch}.tar.gz" -C "$(dirname "$bin")" cloudtab
   done
 done
-[[ "$REF" != "HEAD" ]] && git -C "$ROOT" worktree remove --force "$WT" >/dev/null
 
 # ---- 2) Tag (if missing) + push (if missing on remote) ------------------
-if ! git -C "$ROOT" rev-parse -q --verify "$VERSION" >/dev/null; then
-  git -C "$ROOT" tag "$VERSION"
+if [[ -z "$LOCAL_TAG_SHA" ]]; then
+  git -C "$ROOT" tag "$VERSION" "$SHA"
 fi
-if ! git -C "$ROOT" ls-remote --tags --quiet "https://x-access-token:${TOKEN}@github.com/${OWNER}/${REPO}.git" "refs/tags/$VERSION" | grep -q "$VERSION"; then
+if [[ -z "$REMOTE_TAG_SHA" ]]; then
   echo "==> Pushing tag $VERSION"
-  git -C "$ROOT" push "https://x-access-token:${TOKEN}@github.com/${OWNER}/${REPO}.git" "refs/tags/$VERSION"
+  git -C "$ROOT" push "$REMOTE" "refs/tags/$VERSION"
 fi
 
 # ---- 3) Release body ----------------------------------------------------
@@ -739,6 +779,47 @@ instead of a mislabelled CNY amount.
 - `TestExpectedCurrencyFor` updated: Tencent intl → USD, domestic → CNY.
 - All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
 EOF
+elif [[ "$VERSION" == "v0.3.20" ]]; then
+cat > "$BODY_FILE" <<'EOF'
+## cloudtab v0.3.20 — correct inventory diffs and fail-closed price validation
+
+### Complete before/after inventories
+`cloudtab diff` now prices each plan's recursive `planned_values` inventory rather
+than only create/update changes. Unchanged resources establish the real baseline,
+deletions appear as savings, updates report their actual delta, and child-module
+resources are included. Legacy plans without `planned_values` retain the previous
+`resource_changes` fallback. `breakdown` remains change-oriented.
+
+Provider regions are now resolved per resource through Terraform's exact
+`provider_config_key`. Multiple aliases of the same provider can therefore use
+different regions deterministically, including expanded nested modules; explicit
+resource regions still win.
+
+### Tencent anti-fabrication guard
+All 20 paid Tencent mapper implementations reject empty responses, Tencent business
+errors, and quotes with no positive finite paid component. Legitimate optional
+zero-cost components remain allowed when the quote contains a positive primary
+component. A rejected raw response is evicted immediately, preventing a malformed
+HTTP-success payload from poisoning the on-disk cache for 24 hours.
+
+### Verified Action installation and release provenance
+The GitHub Action parses and validates the release tag, downloads into a temporary
+directory, and verifies SHA-256 against the release's mandatory `checksums.txt`
+before extraction. Verified Action installs require v0.3.20 or newer.
+
+The release script now resolves one immutable commit, builds all four archives from
+a detached clean worktree at that commit, requires local/remote tags to match it,
+and hashes the exact published assets. Interrupted reruns fail if an existing
+checksum manifest is stale or incomplete instead of silently publishing a mixed
+release.
+
+### Tests
+- Inventory/create/update/delete/no-op, nested module, provider-alias and diff
+  membership regression suites.
+- Registry-driven empty/business-error validation across every paid Tencent mapper.
+- Action installer and release checksum/provenance shell suites.
+- All **62** mappers pass `go vet` and `go test -race` (6/6 packages).
+EOF
 else
   echo "Release $VERSION" > "$BODY_FILE"
 fi
@@ -769,8 +850,8 @@ EXISTING=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
   "https://api.github.com/repos/$OWNER/$REPO/releases/$RELEASE_ID/assets" \
   | python3 -c "import sys,json;print('\n'.join(a['name'] for a in json.load(sys.stdin)))")
 
-for f in "$OUT"/cloudtab_*.tar.gz; do
-  name=$(basename "$f")
+for name in "${ASSETS[@]}"; do
+  f="$OUT/$name"
   if echo "$EXISTING" | grep -qx "$name"; then
     echo "  skip $name (already present)"
     continue
@@ -781,6 +862,73 @@ for f in "$OUT"/cloudtab_*.tar.gz; do
     -H "Content-Type: application/gzip" \
     --data-binary "@$f"
 done
+
+# ---- 6) Hash the exact published assets and reconcile checksums.txt ------
+echo "==> Generating checksums from published assets"
+ASSETS_JSON="$OUT/assets.json"
+PUBLISHED_DIR="$OUT/published"
+CHECKSUMS_FILE="$OUT/checksums.txt"
+mkdir -p "$PUBLISHED_DIR"
+: > "$CHECKSUMS_FILE"
+
+curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO/releases/$RELEASE_ID/assets" \
+  > "$ASSETS_JSON"
+
+for name in "${ASSETS[@]}"; do
+  asset_id=$(python3 - "$ASSETS_JSON" "$name" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    assets = json.load(f)
+name = sys.argv[2]
+print(next((str(a["id"]) for a in assets if a["name"] == name), ""))
+PY
+)
+  if [[ -z "$asset_id" ]]; then
+    echo "ERROR: published asset not found: $name" >&2
+    exit 1
+  fi
+
+  published="$PUBLISHED_DIR/$name"
+  curl -fsSL -o "$published" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/octet-stream" \
+    "https://api.github.com/repos/$OWNER/$REPO/releases/assets/$asset_id"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest=$(sha256sum "$published")
+  else
+    digest=$(shasum -a 256 "$published")
+  fi
+  digest="${digest%%[[:space:]]*}"
+  printf '%s  %s\n' "$digest" "$name" >> "$CHECKSUMS_FILE"
+done
+
+checksum_asset_id=$(python3 - "$ASSETS_JSON" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    assets = json.load(f)
+print(next((str(a["id"]) for a in assets if a["name"] == "checksums.txt"), ""))
+PY
+)
+if [[ -n "$checksum_asset_id" ]]; then
+  published_checksums="$PUBLISHED_DIR/checksums.txt"
+  curl -fsSL -o "$published_checksums" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/octet-stream" \
+    "https://api.github.com/repos/$OWNER/$REPO/releases/assets/$checksum_asset_id"
+  if ! cmp -s "$CHECKSUMS_FILE" "$published_checksums"; then
+    echo "ERROR: existing checksums.txt does not match exact published assets" >&2
+    exit 1
+  fi
+  echo "  verified checksums.txt (already present)"
+else
+  echo "  upload checksums.txt"
+  curl -fsS -X POST "https://uploads.github.com/repos/$OWNER/$REPO/releases/$RELEASE_ID/assets?name=checksums.txt" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: text/plain" \
+    --data-binary "@$CHECKSUMS_FILE"
+fi
 
 echo ""
 echo "✓ Done: https://github.com/$OWNER/$REPO/releases/tag/$VERSION"

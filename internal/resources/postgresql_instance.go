@@ -168,11 +168,15 @@ func (PostgreSQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 		monthly = priceYuan * hoursPerMonth
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("PostgreSQL (spec %v, %vGB)", req.Params["SpecCode"], req.Params["Storage"]),
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    p.Currency,
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

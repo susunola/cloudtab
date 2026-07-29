@@ -105,11 +105,15 @@ func (DCDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCo
 	// postpaid: value is an hourly rate; prepaid: value is the monthly total.
 	monthly, hourly := splitByBilling(priceYuan, payMode != "prepaid")
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("TDSQL MySQL (%v shards, %vGB mem)", req.Params["ShardCount"], req.Params["ShardMemory"]),
 		Unit:        strings.ToUpper(payMode),
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

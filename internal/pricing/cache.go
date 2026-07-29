@@ -144,6 +144,21 @@ func (c *cache) Get(key string) ([]byte, bool) {
 	return payload, found
 }
 
+// Delete removes a cached payload. It is safe to call on a nil cache or a
+// missing key, which makes parse-error invalidation best-effort and idempotent.
+func (c *cache) Delete(key string) error {
+	if c == nil || c.db == nil {
+		return nil
+	}
+	return c.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(cacheBucket))
+		if b == nil {
+			return errors.New("cache bucket missing")
+		}
+		return b.Delete([]byte(key))
+	})
+}
+
 // Put stores payload with the configured TTL.
 func (c *cache) Put(key string, val []byte) error {
 	if c == nil || c.db == nil {

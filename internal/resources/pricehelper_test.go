@@ -2,7 +2,13 @@ package resources
 
 import (
 	"math"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/susunola/cloudtab/internal/output"
+	"github.com/susunola/cloudtab/internal/pricing"
 )
 
 func almostEqual(a, b float64) bool {
@@ -240,6 +246,87 @@ func TestParseAlibabaHuaweiCurrency(t *testing.T) {
 				t.Errorf("currency = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestValidateTencentPaidPrice(t *testing.T) {
+	positive := []output.CostComponent{{MonthlyCost: 1}}
+	cases := []struct {
+		name    string
+		raw     string
+		comps   []output.CostComponent
+		wantErr bool
+	}{
+		{name: "top-level business error", raw: `{"Error":{"Code":"InternalError","Message":"quote failed"}}`, comps: positive, wantErr: true},
+		{name: "nested business error", raw: `{"Response":{"Error":{"Code":"InternalError","Message":"quote failed"}}}`, comps: positive, wantErr: true},
+		{name: "no components", raw: `{}`, wantErr: true},
+		{name: "zero-only components", raw: `{}`, comps: []output.CostComponent{{MonthlyCost: 0, HourlyCost: 0}}, wantErr: true},
+		{name: "non-finite components", raw: `{}`, comps: []output.CostComponent{{MonthlyCost: math.NaN(), HourlyCost: math.Inf(1)}}, wantErr: true},
+		{name: "optional zero with positive monthly component", raw: `{}`, comps: []output.CostComponent{{MonthlyCost: 0}, {MonthlyCost: 2.5}}},
+		{name: "optional zero with positive hourly component", raw: `{}`, comps: []output.CostComponent{{MonthlyCost: 0}, {HourlyCost: 0.01}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTencentPaidPrice([]byte(tc.raw), tc.comps)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("validateTencentPaidPrice() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestPaidTencentMappersRejectInvalidPriceResponses(t *testing.T) {
+	reg := DefaultRegistry()
+	types := reg.Keys()
+	sort.Strings(types)
+
+	seen := make(map[reflect.Type]struct{})
+	paid := make([]struct {
+		name   string
+		mapper Mapper
+	}, 0, 20)
+	for _, tfType := range types {
+		if !strings.HasPrefix(tfType, "tencentcloud_") {
+			continue
+		}
+		mapper, ok := reg.Lookup(tfType)
+		if !ok {
+			t.Fatalf("registered mapper %s cannot be looked up", tfType)
+		}
+		if _, static := mapper.(StaticMapper); static {
+			continue
+		}
+		mapperType := reflect.TypeOf(mapper)
+		if _, duplicate := seen[mapperType]; duplicate {
+			continue
+		}
+		seen[mapperType] = struct{}{}
+		paid = append(paid, struct {
+			name   string
+			mapper Mapper
+		}{name: tfType, mapper: mapper})
+	}
+	if len(paid) != 20 {
+		t.Fatalf("found %d unique paid Tencent mappers, want 20", len(paid))
+	}
+
+	invalid := []struct {
+		name string
+		raw  string
+	}{
+		{name: "empty object", raw: `{}`},
+		{name: "empty Response", raw: `{"Response":{}}`},
+		{name: "business error", raw: `{"Response":{"Error":{"Code":"InternalError","Message":"quote failed"}}}`},
+	}
+	for _, entry := range paid {
+		for _, tc := range invalid {
+			t.Run(entry.name+"/"+tc.name, func(t *testing.T) {
+				comps, err := entry.mapper.Parse(pricing.PriceRequest{Params: map[string]interface{}{}}, []byte(tc.raw))
+				if err == nil {
+					t.Fatalf("Parse returned %d components without error for invalid paid response %s", len(comps), tc.raw)
+				}
+			})
+		}
 	}
 }
 

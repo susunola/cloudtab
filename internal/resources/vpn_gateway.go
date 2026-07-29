@@ -134,6 +134,9 @@ func (VPNGateway) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostComp
 	if bw := price.BandwidthPrice; bw.UnitPrice > 0 || bw.DiscountPrice > 0 || bw.OriginalPrice > 0 {
 		comps = append(comps, vpnComponent("VPN public bandwidth", bw, currency))
 	}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
 	return comps, nil
 }
 

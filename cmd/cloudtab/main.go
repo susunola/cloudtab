@@ -455,8 +455,16 @@ func logRunSummary(engine *pricing.Engine, reps ...*output.Report) {
 }
 
 func priceReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
+	return priceReportWithLoader(engine, path, usage, concurrency, failOnError, parser.LoadPlanJSON)
+}
+
+func priceInventoryReport(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool) (output.Report, error) {
+	return priceReportWithLoader(engine, path, usage, concurrency, failOnError, parser.LoadPlanInventoryJSON)
+}
+
+func priceReportWithLoader(engine *pricing.Engine, path string, usage parser.UsageOverrides, concurrency int, failOnError bool, loadPlan func(string) (*parser.Plan, error)) (output.Report, error) {
 	var rep output.Report
-	plan, err := parser.LoadPlanJSON(path)
+	plan, err := loadPlan(path)
 	if err != nil {
 		return rep, fmt.Errorf("parse plan: %w (hint: pass the JSON form — run 'terraform show -json <planfile> > plan.json')", err)
 	}
@@ -550,11 +558,11 @@ func priceBoth(engine *pricing.Engine, before, after string, beforeUsage, afterU
 		defer wg.Done()
 		// Capture into the named returns so the caller sees whatever each pass
 		// produced even if the sibling errored.
-		b, beforeErr = priceReport(engine, before, beforeUsage, conc, failOnError)
+		b, beforeErr = priceInventoryReport(engine, before, beforeUsage, conc, failOnError)
 	}()
 	go func() {
 		defer wg.Done()
-		a, afterErr = priceReport(engine, after, afterUsage, conc, failOnError)
+		a, afterErr = priceInventoryReport(engine, after, afterUsage, conc, failOnError)
 	}()
 	wg.Wait()
 	if beforeErr != nil {
@@ -651,6 +659,12 @@ func priceResource(engine *pricing.Engine, registry *resources.Registry, r parse
 	parseReq.ExpectedCurrency = engine.ExpectedCurrencyFor(req.Provider)
 	comps, err := mapper.Parse(parseReq, raw)
 	if err != nil {
+		// Query caches transport-successful raw responses before mapper-specific
+		// validation. Evict any response the mapper rejects so malformed JSON or a
+		// provider business error cannot poison this SKU until the cache TTL ends.
+		if invalidateErr := engine.Invalidate(req); invalidateErr != nil {
+			logger.Warn("failed to invalidate rejected price response", "provider", req.Provider, "product", req.Product, "err", invalidateErr)
+		}
 		if failOnError {
 			return nil, nil, fmt.Errorf("parse %s: %w", r.Address, err)
 		}

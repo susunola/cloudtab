@@ -82,11 +82,15 @@ func (ECMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 	// Prefer the discounted price; fall back to the original. Values are cents.
 	hourly := preferDiscount(float64(ip.DiscountPrice), float64(ip.OriginalPrice)) / 100.0
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("ECM (%v)", req.Params["InstanceType"]),
 		Unit:        "HOUR",
 		HourlyCost:  hourly,
 		MonthlyCost: hourly * hoursPerMonth,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

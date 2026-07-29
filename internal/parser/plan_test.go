@@ -206,3 +206,245 @@ func TestLoadPlanJSONAliasedProviderRegion(t *testing.T) {
 		t.Errorf("aliased provider region = %q, want ap-guangzhou-6", p.Resources[0].Region)
 	}
 }
+
+func writePlanJSON(t *testing.T, doc string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func resourceAddresses(resources []PlannedResource) map[string]bool {
+	addresses := make(map[string]bool, len(resources))
+	for _, resource := range resources {
+		addresses[resource.Address] = true
+	}
+	return addresses
+}
+
+func TestLoadPlanInventoryJSONUsesFinalManagedResources(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "planned_values": {
+        "root_module": {
+          "resources": [
+            {"address": "tencentcloud_instance.noop", "mode": "managed", "type": "tencentcloud_instance", "name": "noop", "values": {"instance_type": "S5.SMALL2"}},
+            {"address": "tencentcloud_instance.update", "mode": "managed", "type": "tencentcloud_instance", "name": "update", "values": {"instance_type": "S5.LARGE8"}},
+            {"address": "tencentcloud_instance.create", "mode": "managed", "type": "tencentcloud_instance", "name": "create", "values": {"instance_type": "S5.MEDIUM4"}},
+            {"address": "data.tencentcloud_images.base", "mode": "data", "type": "tencentcloud_images", "name": "base", "values": {"image_type": "PUBLIC_IMAGE"}}
+          ],
+          "child_modules": [{
+            "address": "module.workers[0]",
+            "resources": [
+              {"address": "module.workers[0].tencentcloud_instance.child", "mode": "managed", "type": "tencentcloud_instance", "name": "child", "values": {"instance_type": "S5.SMALL2"}},
+              {"address": "module.workers[0].data.tencentcloud_images.base", "mode": "data", "type": "tencentcloud_images", "name": "base", "values": {}}
+            ]
+          }]
+        }
+      },
+      "resource_changes": [
+        {"address": "tencentcloud_instance.noop", "type": "tencentcloud_instance", "name": "noop", "change": {"actions": ["no-op"], "after": {"instance_type": "S5.SMALL2"}}},
+        {"address": "tencentcloud_instance.update", "type": "tencentcloud_instance", "name": "update", "change": {"actions": ["update"], "after": {"instance_type": "S5.LARGE8"}}},
+        {"address": "tencentcloud_instance.create", "type": "tencentcloud_instance", "name": "create", "change": {"actions": ["create"], "after": {"instance_type": "S5.MEDIUM4"}}},
+        {"address": "tencentcloud_instance.delete", "type": "tencentcloud_instance", "name": "delete", "change": {"actions": ["delete"], "after": null}}
+      ]
+    }`)
+
+	plan, err := LoadPlanInventoryJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanInventoryJSON: %v", err)
+	}
+	got := resourceAddresses(plan.Resources)
+	for _, want := range []string{
+		"tencentcloud_instance.noop",
+		"tencentcloud_instance.update",
+		"tencentcloud_instance.create",
+		"module.workers[0].tencentcloud_instance.child",
+	} {
+		if !got[want] {
+			t.Errorf("missing final managed resource %q: %v", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		"tencentcloud_instance.delete",
+		"data.tencentcloud_images.base",
+		"module.workers[0].data.tencentcloud_images.base",
+	} {
+		if got[unwanted] {
+			t.Errorf("unexpected inventory resource %q: %v", unwanted, got)
+		}
+	}
+	if len(plan.Resources) != 4 {
+		t.Fatalf("inventory resource count = %d, want 4: %+v", len(plan.Resources), plan.Resources)
+	}
+}
+
+func TestLoadPlanInventoryJSONPresentEmptyRootIsEmpty(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "planned_values": {"root_module": {}},
+      "resource_changes": [
+        {"address": "tencentcloud_instance.destroyed", "type": "tencentcloud_instance", "name": "destroyed", "change": {"actions": ["delete"], "after": null}},
+        {"address": "tencentcloud_instance.stale", "type": "tencentcloud_instance", "name": "stale", "change": {"actions": ["create"], "after": {"instance_type": "S5.SMALL2"}}}
+      ]
+    }`)
+
+	plan, err := LoadPlanInventoryJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanInventoryJSON: %v", err)
+	}
+	if len(plan.Resources) != 0 {
+		t.Fatalf("destroy-all inventory = %+v, want empty", plan.Resources)
+	}
+}
+
+func TestLoadPlanInventoryJSONFallsBackWhenPlannedRootAbsent(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "resource_changes": [
+        {"address": "tencentcloud_instance.update", "type": "tencentcloud_instance", "name": "update", "change": {"actions": ["update"], "after": {"instance_type": "S5.LARGE8"}}},
+        {"address": "tencentcloud_instance.delete", "type": "tencentcloud_instance", "name": "delete", "change": {"actions": ["delete"], "after": null}},
+        {"address": "tencentcloud_instance.noop", "type": "tencentcloud_instance", "name": "noop", "change": {"actions": ["no-op"], "after": {"instance_type": "S5.SMALL2"}}}
+      ]
+    }`)
+
+	plan, err := LoadPlanInventoryJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanInventoryJSON: %v", err)
+	}
+	if len(plan.Resources) != 1 || plan.Resources[0].Address != "tencentcloud_instance.update" {
+		t.Fatalf("fallback inventory = %+v, want only update", plan.Resources)
+	}
+}
+
+func regionsByAddress(resources []PlannedResource) map[string]string {
+	regions := make(map[string]string, len(resources))
+	for _, resource := range resources {
+		regions[resource.Address] = resource.Region
+	}
+	return regions
+}
+
+func TestLoadPlanJSONResolvesExactProviderConfigRegions(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "configuration": {
+        "provider_config": {
+          "aws": {"expressions": {"region": {"constant_value": "us-east-1"}}},
+          "aws.west": {"expressions": {"region": {"constant_value": "us-west-2"}}}
+        },
+        "root_module": {
+          "resources": [
+            {"address": "aws_instance.default", "provider_config_key": "aws"},
+            {"address": "aws_instance.west", "provider_config_key": "aws.west"},
+            {"address": "aws_instance.explicit", "provider_config_key": "aws.west"}
+          ]
+        }
+      },
+      "resource_changes": [
+        {"address": "aws_instance.default", "type": "aws_instance", "name": "default", "change": {"actions": ["create"], "after": {"instance_type": "m5.large"}}},
+        {"address": "aws_instance.west", "type": "aws_instance", "name": "west", "change": {"actions": ["create"], "after": {"instance_type": "m5.large"}}},
+        {"address": "aws_instance.explicit", "type": "aws_instance", "name": "explicit", "change": {"actions": ["create"], "after": {"instance_type": "m5.large", "region": "eu-central-1"}}}
+      ]
+    }`)
+
+	plan, err := LoadPlanJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanJSON: %v", err)
+	}
+	got := regionsByAddress(plan.Resources)
+	want := map[string]string{
+		"aws_instance.default":  "us-east-1",
+		"aws_instance.west":     "us-west-2",
+		"aws_instance.explicit": "eu-central-1",
+	}
+	for address, region := range want {
+		if got[address] != region {
+			t.Errorf("region for %s = %q, want %q", address, got[address], region)
+		}
+	}
+}
+
+func TestLoadPlanInventoryJSONResolvesAliasesInExpandedNestedModules(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "configuration": {
+        "provider_config": {
+          "aws": {"expressions": {"region": {"constant_value": "us-east-1"}}},
+          "aws.west": {"expressions": {"region": {"constant_value": "us-west-2"}}},
+          "aws.eu": {"expressions": {"region": {"constant_value": "eu-west-1"}}}
+        },
+        "root_module": {
+          "module_calls": {
+            "workers": {"module": {
+              "resources": [
+                {"address": "module.workers.aws_instance.node", "provider_config_key": "aws.eu"}
+              ],
+              "module_calls": {
+                "nested": {"module": {
+                  "resources": [
+                    {"address": "module.workers.module.nested.aws_instance.node", "provider_config_key": "aws.west"}
+                  ]
+                }}
+              }
+            }}
+          }
+        }
+      },
+      "planned_values": {"root_module": {
+        "child_modules": [{
+          "address": "module.workers[0]",
+          "resources": [
+            {"address": "module.workers[0].aws_instance.node[0]", "mode": "managed", "type": "aws_instance", "name": "node", "values": {"instance_type": "m5.large"}}
+          ],
+          "child_modules": [{
+            "address": "module.workers[0].module.nested[\"blue\"]",
+            "resources": [
+              {"address": "module.workers[0].module.nested[\"blue\"].aws_instance.node", "mode": "managed", "type": "aws_instance", "name": "node", "values": {"instance_type": "m5.large"}}
+            ]
+          }]
+        }]
+      }}
+    }`)
+
+	plan, err := LoadPlanInventoryJSON(path)
+	if err != nil {
+		t.Fatalf("LoadPlanInventoryJSON: %v", err)
+	}
+	got := regionsByAddress(plan.Resources)
+	want := map[string]string{
+		"module.workers[0].aws_instance.node[0]":                      "eu-west-1",
+		"module.workers[0].module.nested[\"blue\"].aws_instance.node": "us-west-2",
+	}
+	for address, region := range want {
+		if got[address] != region {
+			t.Errorf("region for %s = %q, want %q", address, got[address], region)
+		}
+	}
+}
+
+func TestLoadPlanJSONLegacyProviderFallbackPrefersBaseDeterministically(t *testing.T) {
+	path := writePlanJSON(t, `{
+      "format_version": "1.2",
+      "configuration": {"provider_config": {
+        "aws.zed": {"expressions": {"region": {"constant_value": "us-west-1"}}},
+        "aws": {"expressions": {"region": {"constant_value": "us-east-2"}}},
+        "aws.alpha": {"expressions": {"region": {"constant_value": "eu-west-1"}}}
+      }},
+      "resource_changes": [
+        {"address": "aws_instance.legacy", "type": "aws_instance", "name": "legacy", "change": {"actions": ["create"], "after": {"instance_type": "m5.large"}}}
+      ]
+    }`)
+
+	for i := 0; i < 20; i++ {
+		plan, err := LoadPlanJSON(path)
+		if err != nil {
+			t.Fatalf("LoadPlanJSON: %v", err)
+		}
+		if got := plan.Resources[0].Region; got != "us-east-2" {
+			t.Fatalf("legacy fallback region = %q, want base provider us-east-2", got)
+		}
+	}
+}

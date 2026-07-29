@@ -81,11 +81,15 @@ func (LighthouseInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 	// Prefer the discounted price; fall back to the original (already CNY/month).
 	monthly := preferDiscount(ip.DiscountPrice, ip.OriginalPrice)
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("Lighthouse (%v)", req.Params["BundleId"]),
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

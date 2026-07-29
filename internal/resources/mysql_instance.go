@@ -107,11 +107,15 @@ func (MySQLInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostC
 		monthly = priceYuan * hoursPerMonth
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("MySQL (%vMB/%vGB)", req.Params["Memory"], req.Params["Volume"]),
 		Unit:        payType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    p.Currency,
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

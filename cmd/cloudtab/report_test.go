@@ -190,3 +190,104 @@ func TestPriceBothConcurrentPricesBothPlans(t *testing.T) {
 		t.Fatalf("after skipped = %d, want %d", len(a.Skipped), afterN)
 	}
 }
+
+func writeUnsupportedInventoryPlan(t *testing.T, inventory []string, changes map[string][]string) string {
+	t.Helper()
+	plannedResources := make([]map[string]interface{}, 0, len(inventory))
+	for _, address := range inventory {
+		plannedResources = append(plannedResources, map[string]interface{}{
+			"address": address,
+			"mode":    "managed",
+			"type":    "unsupported_thing",
+			"name":    address,
+			"values":  map[string]interface{}{},
+		})
+	}
+	resourceChanges := make([]map[string]interface{}, 0, len(changes))
+	for address, actions := range changes {
+		var after interface{} = map[string]interface{}{}
+		if len(actions) == 1 && actions[0] == "delete" {
+			after = nil
+		}
+		resourceChanges = append(resourceChanges, map[string]interface{}{
+			"address": address,
+			"type":    "unsupported_thing",
+			"name":    address,
+			"change": map[string]interface{}{
+				"actions": actions,
+				"after":   after,
+			},
+		})
+	}
+	doc := map[string]interface{}{
+		"format_version": "1.2",
+		"planned_values": map[string]interface{}{
+			"root_module": map[string]interface{}{"resources": plannedResources},
+		},
+		"resource_changes": resourceChanges,
+	}
+	blob, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal inventory plan: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(path, blob, 0o600); err != nil {
+		t.Fatalf("write inventory plan: %v", err)
+	}
+	return path
+}
+
+func TestPriceBothUsesFinalInventoryWhileBreakdownUsesChanges(t *testing.T) {
+	beforePath := writeUnsupportedInventoryPlan(t,
+		[]string{"unsupported_thing.stable", "unsupported_thing.removed"},
+		map[string][]string{
+			"unsupported_thing.stable":  {"no-op"},
+			"unsupported_thing.removed": {"delete"},
+		})
+	afterPath := writeUnsupportedInventoryPlan(t,
+		[]string{"unsupported_thing.stable", "unsupported_thing.added"},
+		map[string][]string{
+			"unsupported_thing.stable": {"no-op"},
+			"unsupported_thing.added":  {"create"},
+		})
+
+	engine, err := pricing.NewEngine(pricing.Config{
+		SecretID: "id", SecretKey: "key", Region: "ap-guangzhou", NoCache: true,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer engine.Close()
+
+	before, after, err := priceBoth(engine, beforePath, afterPath,
+		parser.UsageOverrides{}, parser.UsageOverrides{}, 2, false)
+	if err != nil {
+		t.Fatalf("priceBoth: %v", err)
+	}
+	beforeAddresses := map[string]bool{}
+	for _, skipped := range before.Skipped {
+		beforeAddresses[skipped.Address] = true
+	}
+	afterAddresses := map[string]bool{}
+	for _, skipped := range after.Skipped {
+		afterAddresses[skipped.Address] = true
+	}
+	for _, want := range []string{"unsupported_thing.stable", "unsupported_thing.removed"} {
+		if !beforeAddresses[want] {
+			t.Errorf("before inventory missing %q: %+v", want, before.Skipped)
+		}
+	}
+	for _, want := range []string{"unsupported_thing.stable", "unsupported_thing.added"} {
+		if !afterAddresses[want] {
+			t.Errorf("after inventory missing %q: %+v", want, after.Skipped)
+		}
+	}
+
+	breakdown, err := priceReport(engine, afterPath, parser.UsageOverrides{}, 2, false)
+	if err != nil {
+		t.Fatalf("priceReport: %v", err)
+	}
+	if len(breakdown.Skipped) != 1 || breakdown.Skipped[0].Address != "unsupported_thing.added" {
+		t.Fatalf("breakdown membership = %+v, want only changed resource", breakdown.Skipped)
+	}
+}

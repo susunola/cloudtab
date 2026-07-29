@@ -87,11 +87,15 @@ func (YunjingLicense) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cost
 	if machines, ok := req.Params["Machines"].([]interface{}); ok {
 		n = len(machines)
 	}
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("CWP Pro license (x%d)", n),
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

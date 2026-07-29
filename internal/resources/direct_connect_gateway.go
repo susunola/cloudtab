@@ -50,11 +50,15 @@ func (DirectConnectGateway) Parse(req pricing.PriceRequest, raw []byte) ([]outpu
 		cost = wrap.Response.TotalCost
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        "Direct Connect Gateway",
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: cost,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

@@ -127,11 +127,15 @@ func (DomainRegistration) Parse(req pricing.PriceRequest, raw []byte) ([]output.
 	monthly := yearlyYuan / monthsPerYear
 
 	cur := tencentCurrency(req.ExpectedCurrency)
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("Domain .%s registration (yearly %.2f %s)", chosen.Tld, yearlyYuan, cur),
 		Unit:        "MONTH",
 		HourlyCost:  0,
 		MonthlyCost: monthly,
 		Currency:    cur,
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

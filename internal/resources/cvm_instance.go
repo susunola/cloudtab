@@ -131,5 +131,8 @@ func (CVMInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.CostCom
 			Currency:    currency,
 		})
 	}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
 	return comps, nil
 }

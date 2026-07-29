@@ -128,6 +128,47 @@ func TestCacheKeyIsolatedBySite(t *testing.T) {
 	}
 }
 
+func TestEngineInvalidateDeletesSiteNamespacedCacheEntry(t *testing.T) {
+	e, err := NewEngine(Config{
+		Site:      "intl",
+		CachePath: filepath.Join(t.TempDir(), "cache.db"),
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer e.Close()
+
+	req := PriceRequest{
+		Product: "cvm",
+		Action:  "InquiryPriceRunInstances",
+		Region:  "ap-singapore",
+		Params:  map[string]interface{}{"InstanceType": "S5.MEDIUM4"},
+	}
+	key, err := e.cacheKey(req)
+	if err != nil {
+		t.Fatalf("cacheKey: %v", err)
+	}
+	if err := e.cache.Put(key, []byte(`{"cached":"raw"}`)); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+	if raw, err := e.Query(req); err != nil || string(raw) != `{"cached":"raw"}` {
+		t.Fatalf("Query before invalidation = %q, %v; want seeded cache hit", raw, err)
+	}
+
+	if err := e.Invalidate(req); err != nil {
+		t.Fatalf("Invalidate: %v", err)
+	}
+	if raw, ok := e.cache.Get(key); ok {
+		t.Fatalf("cache entry still present after invalidation: %q", raw)
+	}
+	// The engine has no Tencent credentials, so a post-invalidation Query can
+	// only fail at dispatch. If the stale bytes were still cached it would return
+	// them successfully instead.
+	if raw, err := e.Query(req); err == nil || raw != nil {
+		t.Fatalf("Query after invalidation = %q, %v; want cache miss and dispatch error", raw, err)
+	}
+}
+
 // TestEngineClientBuildsForBothSites verifies the engine can construct a real
 // SDK client for both sites without error (no network call is made at client
 // construction time). This exercises the actual client() path end to end.

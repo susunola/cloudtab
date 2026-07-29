@@ -109,11 +109,15 @@ func (MariaDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 	// POSTPAID DescribePrice returns an hourly rate; PREPAID returns the monthly total.
 	monthly, hourly := splitByBilling(priceYuan, strings.Contains(payMode, "postpaid"))
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("MariaDB (%vGB mem, %vGB disk)", req.Params["Memory"], req.Params["Storage"]),
 		Unit:        strings.ToUpper(payMode),
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

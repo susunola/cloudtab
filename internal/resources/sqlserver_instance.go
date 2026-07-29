@@ -111,11 +111,15 @@ func (SQLServerInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.C
 	// POSTPAID: value is an hourly rate; PREPAID: value is the monthly total.
 	monthly, hourly := splitByBilling(priceYuan, chargeType != "PREPAID")
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("SQL Server (%vGB mem, %vGB disk)", req.Params["Memory"], req.Params["Storage"]),
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

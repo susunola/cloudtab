@@ -163,11 +163,15 @@ func (MongoDBInstance) Parse(req pricing.PriceRequest, raw []byte) ([]output.Cos
 		monthly = hourly * hoursPerMonth
 	}
 
-	return []output.CostComponent{{
+	comps := []output.CostComponent{{
 		Name:        fmt.Sprintf("MongoDB (%vGB mem, %vGB disk)", req.Params["Memory"], req.Params["Volume"]),
 		Unit:        chargeType,
 		HourlyCost:  hourly,
 		MonthlyCost: monthly,
 		Currency:    tencentCurrency(req.ExpectedCurrency),
-	}}, nil
+	}}
+	if err := validateTencentPaidPrice(raw, comps); err != nil {
+		return nil, err
+	}
+	return comps, nil
 }

@@ -747,6 +747,20 @@ func (e *Engine) cacheKey(req PriceRequest) (string, error) {
 	return e.siteKeyForProvider(req.provider()) + "|" + base, nil
 }
 
+// Invalidate removes the cached raw response for req. Mappers call this after
+// rejecting a transport-successful response so malformed or business-error JSON
+// cannot poison subsequent runs for the full cache TTL.
+func (e *Engine) Invalidate(req PriceRequest) error {
+	if e == nil || e.cache == nil {
+		return nil
+	}
+	key, err := e.cacheKey(req)
+	if err != nil {
+		return err
+	}
+	return e.cache.Delete(key)
+}
+
 // unavailableReason reports whether a product is known-unavailable on a site,
 // for any provider. Tencent entries live on the per-productHandler struct; the
 // other providers are consulted from the Engine.unavailable map so the gate is
