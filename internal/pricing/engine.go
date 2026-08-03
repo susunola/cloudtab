@@ -253,6 +253,11 @@ func (e *Engine) siteKeyForProvider(provider string) string {
 // always overrides this value.
 func (e *Engine) ExpectedCurrencyFor(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
+	// Empty provider defaults to tencentcloud (backward compat with mappers
+	// that predate multi-cloud support and leave Provider unset).
+	if provider == "" {
+		provider = providerTencent
+	}
 	switch provider {
 	case providerTencent, providerAlibaba, providerHuawei:
 		if e.siteKeyForProvider(provider) == "intl" {
